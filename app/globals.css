@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 0%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 0%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 0 0% 0%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 10%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 70%;
+    --accent: 0 100% 50%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 100% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 30%;
+    --input: 0 0% 20%;
+    --ring: 0 100% 50%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Estilos personalizados para el mapa */
+.custom-div-icon {
+  background: transparent;
+  border: none;
+}
+
+/* Mejoras de accesibilidad */
+button:focus-visible,
+[role="button"]:focus-visible {
+  @apply ring-2 ring-offset-2 ring-red-500;
+}
+
+/* Estilos para mejorar la legibilidad */
+.leaflet-popup-content {
+  color: #1f2937 !important;
+  font-weight: 500;
+}
+
+/* Fix z-index para que los modales aparezcan sobre el mapa */
+[data-radix-popper-content-wrapper] {
+  z-index: 9999 !important;
+}
+
+[role="dialog"] {
+  z-index: 9999 !important;
+}
+
+.leaflet-container {
+  z-index: 1 !important;
+}
+
+/* Overlay del modal */
+[data-radix-dialog-overlay] {
+  z-index: 9998 !important;
+}
+
+/* Contenido del modal */
+[data-radix-dialog-content] {
+  z-index: 9999 !important;
+}
+
+/* Estilos para las etiquetas de ruta */
+.route-label {
+  background: transparent;
+  border: none;
+  font-weight: bold;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
+
+/* Estilos para las flechas de dirección */
+.arrow-icon {
+  background: transparent;
+  border: none;
+}
+
+/* Animación de pulso para la ubicación del usuario */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.user-location-icon {
+  background: transparent;
+  border: none;
+}
+
+/* Animación de bounce para el indicador de scroll */
+@keyframes bounce {
+  0%,
+  20%,
+  53%,
+  80%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  40%,
+  43% {
+    transform: translate3d(0, -30px, 0);
+  }
+  70% {
+    transform: translate3d(0, -15px, 0);
+  }
+  90% {
+    transform: translate3d(0, -4px, 0);
+  }
+}
+
+.animate-bounce {
+  animation: bounce 2s infinite;
+}
+
+/* Efectos de hover suaves */
+.hover-lift {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(239, 68, 68, 0.2);
+}
+
+/* Gradiente de texto */
+.text-gradient {
+  background: linear-gradient(135deg, #ef4444, #f97316);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}

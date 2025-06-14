@@ -15,6 +15,7 @@ function InteractiveMapClient() {
   const [puntosEncuentro, setPuntosEncuentro] = useState<PuntoEncuentro[]>([]);
   const [loading, setLoading] = useState(true);
   const [isClient, setIsClient] = useState(false);
+  const [mapReady, setMapReady] = useState(false); // Nuevo estado para controlar cuando el mapa esté listo
   const [ubicacionSeleccionada, setUbicacionSeleccionada] =
     useState<string>("Pucón");
 
@@ -326,17 +327,25 @@ function InteractiveMapClient() {
         // Añadir control de escala
         L.control.scale({ imperial: false }).addTo(map);
 
+        // Marcar el mapa como listo y guardar referencia
         mapInstanceRef.current = map;
+        
+        // Marcar que el mapa está completamente listo después de un breve delay
+        setTimeout(() => {
+          console.log("🎉 Mapa completamente inicializado y listo para marcadores");
+          setMapReady(true);
+        }, 100);
       });
     }
   }, [isClient, loading, ubicacionSeleccionada]);
 
-  // Actualizar marcadores cuando cambien los puntos de encuentro
+  // Actualizar marcadores cuando cambien los puntos de encuentro Y el mapa esté listo
   useEffect(() => {
     console.log("🗺️ useEffect de marcadores activado");
     console.log("🗺️ Estado actual:", {
       mapInstance: !!mapInstanceRef.current,
-      mapReady: mapInstanceRef.current?.getContainer() ? "sí" : "no",
+      mapReady: mapReady,
+      mapContainer: mapInstanceRef.current?.getContainer() ? "sí" : "no",
       puntosLength: puntosEncuentro.length,
       isClient,
       loading,
@@ -355,8 +364,9 @@ function InteractiveMapClient() {
       );
     }
 
-    if (mapInstanceRef.current && puntosEncuentro.length > 0) {
-      console.log("✅ Condiciones cumplidas - creando marcadores");
+    // Solo crear marcadores si el mapa está listo Y tenemos puntos
+    if (mapReady && mapInstanceRef.current && puntosEncuentro.length > 0) {
+      console.log("✅ Todas las condiciones cumplidas - creando marcadores");
       console.log(
         `📍 Iniciando creación de ${puntosEncuentro.length} marcadores`
       );
@@ -472,6 +482,94 @@ function InteractiveMapClient() {
                   </div>
                 </div>
 
+                ${
+                  punto.ocupado
+                    ? `<div style="
+                    background: linear-gradient(135deg, #ef4444, #dc2626);
+                    color: white;
+                    border: none;
+                    padding: 12px 16px;
+                    border-radius: 8px;
+                    font-size: 14px;
+                    font-weight: 700;
+                    margin-top: 10px;
+                    width: 100%;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                    cursor: not-allowed;
+                    opacity: 0.8;
+                  ">
+                    🚫 Punto Lleno
+                  </div>`
+                    : `<div style="
+                    display: flex;
+                    gap: 8px;
+                    margin-top: 10px;
+                    width: 100%;
+                  ">
+                    <button
+                      onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${
+                        punto.latitud
+                      },${
+                        punto.longitud
+                      }&destination_place_id=${encodeURIComponent(
+                        punto.nombre
+                      )}&travelmode=driving', '_blank')"
+                      style="
+                        background: linear-gradient(135deg, #10b981, #059669);
+                        color: white;
+                        border: none;
+                        padding: 12px 16px;
+                        border-radius: 8px;
+                        font-size: 13px;
+                        font-weight: 700;
+                        cursor: pointer;
+                        box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);
+                        transition: all 0.2s ease;
+                        flex: 1;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 6px;
+                      "
+                      onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 12px rgba(16, 185, 129, 0.4)';"
+                      onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(16, 185, 129, 0.3)';"
+                    >
+                      � Navegar
+                    </button>
+                    <button
+                      onclick="window.open('https://www.google.com/maps/@${
+                        punto.latitud
+                      },${
+                        punto.longitud
+                      },3a,75y,90h,90t/data=!3m7!1e1!3m5!1s!2e0!6shttps:%2F%2Fstreetviewpixels-pa.googleapis.com%2Fv1%2Fthumbnail!7i16384!8i8192', '_blank')"
+                      style="
+                        background: linear-gradient(135deg, #3b82f6, #2563eb);
+                        color: white;
+                        border: none;
+                        padding: 12px 16px;
+                        border-radius: 8px;
+                        font-size: 13px;
+                        font-weight: 700;
+                        cursor: pointer;
+                        box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3);
+                        transition: all 0.2s ease;
+                        flex: 1;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 6px;
+                      "
+                      onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 12px rgba(59, 130, 246, 0.4)';"
+                      onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(59, 130, 246, 0.3)';"
+                    >
+                      📱 Ver RA
+                    </button>
+                  </div>`
+                }
+
                 <div style="margin-top: 8px; padding: 6px; background: #dbeafe; border-radius: 6px; font-size: 11px; color: #1e40af;">
                   📍 Coordenadas: ${punto.latitud.toFixed(
                     4
@@ -524,11 +622,14 @@ function InteractiveMapClient() {
     } else {
       console.log("⏳ Marcadores no creados - esperando condiciones:", {
         mapExists: !!mapInstanceRef.current,
+        mapReady: mapReady,
         puntosCount: puntosEncuentro.length,
-        waitingFor: !mapInstanceRef.current ? "mapa" : "puntos de encuentro",
+        isClient: isClient,
+        loading: loading,
+        waitingFor: !mapReady ? "mapa listo" : !mapInstanceRef.current ? "instancia de mapa" : "puntos de encuentro",
       });
     }
-  }, [puntosEncuentro, isClient, loading]);
+  }, [puntosEncuentro, isClient, loading, mapReady]);
 
   // Limpiar el mapa cuando el componente se desmonte
   useEffect(() => {
@@ -541,7 +642,11 @@ function InteractiveMapClient() {
   }, []);
 
   const cambiarUbicacion = (ubicacion: string) => {
+    console.log(`🗺️ Cambiando ubicación a: ${ubicacion}`);
     setUbicacionSeleccionada(ubicacion);
+    
+    // Resetear el estado de mapa listo para forzar re-creación de marcadores
+    setMapReady(false);
 
     if (mapInstanceRef.current) {
       let centerLat = -39.3167;
@@ -563,6 +668,12 @@ function InteractiveMapClient() {
       }
 
       mapInstanceRef.current.setView([centerLat, centerLng], zoomLevel);
+      
+      // Marcar el mapa como listo nuevamente después del cambio de vista
+      setTimeout(() => {
+        console.log(`🎯 Mapa reposicionado a ${ubicacion} y listo para marcadores`);
+        setMapReady(true);
+      }, 200);
     }
   };
 

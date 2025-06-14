@@ -66,12 +66,6 @@ export default function VulcaniaApp() {
               >
                 <LogOut className="h-5 w-5" />
               </Button>
-              <div className="text-xs text-gray-600 hidden sm:block">
-                <kbd className="bg-gray-800 px-1 rounded text-xs">
-                  Ctrl+Shift+A
-                </kbd>{" "}
-                Admin
-              </div>
             </div>
           </div>
         </div>

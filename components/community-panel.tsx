@@ -12,13 +12,6 @@ import {
   type AvisoComunidad,
 } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
-// DEBUG: Importar funciones de test
-import {
-  testSupabaseConnection,
-  testTableStructure,
-  testUserCreation,
-  testMessageInsertion,
-} from "../supabase-test";
 
 export default function CommunityPanel() {
   const [avisos, setAvisos] = useState<AvisoComunidad[]>([]);
@@ -155,7 +148,12 @@ export default function CommunityPanel() {
         alert(
           "Error: Tu usuario no existe en la base de datos. Por favor, cierra sesión y vuelve a iniciar sesión."
         );
-        limpiarSesion();
+
+        // Limpiar sesión corrupta
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("vulcania_usuario");
+          window.location.reload();
+        }
         return;
       }
 
@@ -241,52 +239,8 @@ export default function CommunityPanel() {
     return "info";
   };
 
-  // Función para limpiar sesión corrupta
-  const limpiarSesion = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("vulcania_usuario");
-      window.location.reload();
-    }
-  };
-
-  // DEBUG: Agregar función de test
-  const runDebugTests = async () => {
-    console.log("🔧 INICIANDO TESTS DE DEBUG...");
-    await testSupabaseConnection();
-    await testTableStructure();
-    if (usuario?.telefono) {
-      const testUser = await testUserCreation(usuario.telefono);
-      if (testUser) {
-        await testMessageInsertion(testUser.id);
-      }
-    }
-  };
-
   return (
     <div className="space-y-6">
-      {/* DEBUG: Botón de test temporal */}
-      {process.env.NODE_ENV === "development" && (
-        <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg p-4">
-          <h4 className="text-yellow-400 font-medium mb-2">🔧 Debug Mode</h4>
-          <div className="flex gap-2">
-            <Button
-              onClick={runDebugTests}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white text-sm"
-              size="sm"
-            >
-              Ejecutar Tests de Supabase
-            </Button>
-            <Button
-              onClick={limpiarSesion}
-              className="bg-red-600 hover:bg-red-700 text-white text-sm"
-              size="sm"
-            >
-              Limpiar Sesión
-            </Button>
-          </div>
-        </div>
-      )}
-
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-semibold text-white flex items-center">
           <Users className="h-6 w-6 mr-2 text-blue-500" />

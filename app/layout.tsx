@@ -20,6 +20,29 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
+      <head>
+        {/* Precargar recursos de Leaflet */}
+        <link
+          rel="preload"
+          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          as="style"
+        />
+        <link
+          rel="preload"
+          href="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png"
+          as="image"
+        />
+        <link
+          rel="preload"
+          href="https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png"
+          as="image"
+        />
+        <link
+          rel="preload"
+          href="https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png"
+          as="image"
+        />
+      </head>
       <body className={inter.className} suppressHydrationWarning={true}>
         <AuthProvider>{children}</AuthProvider>
       </body>

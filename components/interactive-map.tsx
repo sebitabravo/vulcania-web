@@ -22,12 +22,45 @@ function InteractiveMapClient() {
   useEffect(() => {
     setIsClient(true);
 
-    // Cargar CSS de Leaflet dinámicamente
+    // Cargar CSS de Leaflet dinámicamente con manejo de errores
     if (typeof window !== "undefined") {
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      document.head.appendChild(link);
+      const existingLink = document.querySelector('link[href*="leaflet.css"]');
+
+      if (!existingLink) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        link.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
+        link.crossOrigin = "";
+        link.onload = () => {
+          console.log("✅ Leaflet CSS cargado correctamente");
+
+          // Agregar CSS adicional para marcadores personalizados
+          const customStyle = document.createElement("style");
+          customStyle.textContent = `
+            .custom-div-icon {
+              background: transparent !important;
+              border: none !important;
+            }
+
+            .leaflet-popup-content-wrapper {
+              border-radius: 8px !important;
+            }
+
+            .leaflet-popup-content {
+              margin: 0 !important;
+              line-height: 1.4 !important;
+            }
+
+            .leaflet-container {
+              background: #1f2937 !important;
+            }
+          `;
+          document.head.appendChild(customStyle);
+        };
+        link.onerror = () => console.error("❌ Error cargando Leaflet CSS");
+        document.head.appendChild(link);
+      }
     }
   }, []);
 
@@ -70,20 +103,25 @@ function InteractiveMapClient() {
     ) {
       // Importar Leaflet dinámicamente
       import("leaflet").then((L) => {
-        // Configurar iconos por defecto
+        console.log("📍 Configurando iconos de Leaflet...");
+
+        // Configurar iconos por defecto con URLs más confiables
         delete (
           L.Icon.Default.prototype as L.Icon.Default & {
             _getIconUrl?: () => string;
           }
         )._getIconUrl;
+
         L.Icon.Default.mergeOptions({
           iconRetinaUrl:
-            "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
+            "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
           iconUrl:
-            "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
+            "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
           shadowUrl:
-            "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+            "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
         });
+
+        console.log("✅ Iconos de Leaflet configurados correctamente");
 
         // Crear el mapa centrado en la ubicación seleccionada
         let centerLat = -39.3167;
@@ -176,10 +214,30 @@ function InteractiveMapClient() {
 
   // Actualizar marcadores cuando cambien los puntos de encuentro
   useEffect(() => {
+    console.log("🗺️ Verificando marcadores:", {
+      mapInstance: !!mapInstanceRef.current,
+      puntosLength: puntosEncuentro.length,
+      puntos: puntosEncuentro,
+    });
+
     if (mapInstanceRef.current && puntosEncuentro.length > 0) {
+      console.log(
+        "✅ Creando marcadores para",
+        puntosEncuentro.length,
+        "puntos"
+      );
+
       import("leaflet").then((L) => {
         // Agregar marcadores de puntos de encuentro con iconos personalizados
-        puntosEncuentro.forEach((punto) => {
+        puntosEncuentro.forEach((punto, index) => {
+          console.log(`🎯 Creando marcador ${index + 1}:`, {
+            nombre: punto.nombre,
+            lat: punto.latitud,
+            lng: punto.longitud,
+            ocupado: punto.ocupado,
+            seguridad: punto.seguridad_nivel,
+          });
+
           // Determinar el color según el estado de ocupación y nivel de seguridad
           let color = "#22c55e"; // Verde por defecto
           let borderColor = "white";
@@ -194,15 +252,18 @@ function InteractiveMapClient() {
           }
 
           const meetingIcon = L.divIcon({
-            html: `<div style="background-color: ${color}; border-radius: 50%; width: 15px; height: 15px; border: 2px solid ${borderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"></div>`,
+            html: `<div style="background-color: ${color}; border-radius: 50%; width: 15px; height: 15px; border: 2px solid ${borderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.3); position: relative; z-index: 1000;"></div>`,
             className: "custom-div-icon",
             iconSize: [15, 15],
             iconAnchor: [7, 7],
           });
 
-          L.marker([punto.latitud, punto.longitud], {
-            icon: meetingIcon,
-          }).addTo(mapInstanceRef.current!).bindPopup(`
+          try {
+            const marker = L.marker([punto.latitud, punto.longitud], {
+              icon: meetingIcon,
+            }).addTo(mapInstanceRef.current!);
+
+            marker.bindPopup(`
               <div style="color: #1f2937; font-weight: 500; min-width: 220px; text-align: center;">
                 <strong style="color: #1f2937; font-size: 16px; display: block; margin-bottom: 6px;">${
                   punto.nombre
@@ -323,7 +384,30 @@ function InteractiveMapClient() {
                 }
               </div>
             `);
+
+            console.log(`✅ Marcador ${index + 1} creado:`, punto.nombre);
+          } catch (markerError) {
+            console.error(
+              `❌ Error creando marcador ${index + 1}:`,
+              markerError,
+              punto
+            );
+          }
         });
+
+        console.log(
+          "✅ Marcadores creados exitosamente:",
+          puntosEncuentro.length,
+          "puntos agregados al mapa"
+        );
+      });
+    } else {
+      console.log("⚠️ No se crearon marcadores:", {
+        mapExists: !!mapInstanceRef.current,
+        pointsCount: puntosEncuentro.length,
+        reason: !mapInstanceRef.current
+          ? "Mapa no inicializado"
+          : "Sin puntos de encuentro",
       });
     }
   }, [puntosEncuentro]);

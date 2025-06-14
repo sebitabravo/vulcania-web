@@ -329,10 +329,12 @@ function InteractiveMapClient() {
 
         // Marcar el mapa como listo y guardar referencia
         mapInstanceRef.current = map;
-        
+
         // Marcar que el mapa está completamente listo después de un breve delay
         setTimeout(() => {
-          console.log("🎉 Mapa completamente inicializado y listo para marcadores");
+          console.log(
+            "🎉 Mapa completamente inicializado y listo para marcadores"
+          );
           setMapReady(true);
         }, 100);
       });
@@ -626,7 +628,11 @@ function InteractiveMapClient() {
         puntosCount: puntosEncuentro.length,
         isClient: isClient,
         loading: loading,
-        waitingFor: !mapReady ? "mapa listo" : !mapInstanceRef.current ? "instancia de mapa" : "puntos de encuentro",
+        waitingFor: !mapReady
+          ? "mapa listo"
+          : !mapInstanceRef.current
+          ? "instancia de mapa"
+          : "puntos de encuentro",
       });
     }
   }, [puntosEncuentro, isClient, loading, mapReady]);
@@ -644,7 +650,7 @@ function InteractiveMapClient() {
   const cambiarUbicacion = (ubicacion: string) => {
     console.log(`🗺️ Cambiando ubicación a: ${ubicacion}`);
     setUbicacionSeleccionada(ubicacion);
-    
+
     // Resetear el estado de mapa listo para forzar re-creación de marcadores
     setMapReady(false);
 
@@ -668,10 +674,12 @@ function InteractiveMapClient() {
       }
 
       mapInstanceRef.current.setView([centerLat, centerLng], zoomLevel);
-      
+
       // Marcar el mapa como listo nuevamente después del cambio de vista
       setTimeout(() => {
-        console.log(`🎯 Mapa reposicionado a ${ubicacion} y listo para marcadores`);
+        console.log(
+          `🎯 Mapa reposicionado a ${ubicacion} y listo para marcadores`
+        );
         setMapReady(true);
       }, 200);
     }

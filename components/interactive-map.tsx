@@ -89,26 +89,90 @@ function InteractiveMapClient() {
 
   useEffect(() => {
     const cargarDatos = async () => {
+      console.log("🔄 Iniciando carga de datos...");
+      console.log("🌍 Environment:", {
+        nodeEnv: process.env.NODE_ENV,
+        supabaseConfigured: !!supabase,
+        windowExists: typeof window !== "undefined",
+      });
+
       try {
         // Verificar que Supabase esté configurado
         if (!supabase) {
-          console.error("Supabase no está configurado");
+          console.error("❌ Supabase no está configurado");
+          console.log("🔍 Variables de entorno disponibles:", {
+            hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+            hasSupabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+            supabaseUrl:
+              process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 30) + "...",
+          });
           return;
         }
 
+        console.log("✅ Supabase configurado correctamente");
+
+        // Verificar conexión a Supabase primero
+        console.log("🔍 Verificando conexión a Supabase...");
+        const { error: testError } = await supabase
+          .from("puntos_encuentro")
+          .select("count")
+          .limit(1);
+
+        if (testError) {
+          console.error("❌ Error de conexión a Supabase:", testError);
+          console.log("🔍 Detalles del error:", {
+            message: testError.message,
+            details: testError.details,
+            hint: testError.hint,
+            code: testError.code,
+          });
+          return;
+        }
+
+        console.log("✅ Conexión a Supabase exitosa");
+
         // Cargar puntos de encuentro
+        console.log("📍 Cargando puntos de encuentro...");
         const { data: puntos, error: errorPuntos } = await supabase
           .from("puntos_encuentro")
           .select("*");
 
+        console.log("🔍 Resultado de la consulta:", {
+          error: errorPuntos,
+          dataLength: puntos?.length,
+          data: puntos,
+        });
+
         if (errorPuntos) {
-          console.error("Error cargando puntos:", errorPuntos);
+          console.error("❌ Error cargando puntos:", errorPuntos);
+          console.log("🔍 Detalles del error de puntos:", {
+            message: errorPuntos.message,
+            details: errorPuntos.details,
+            hint: errorPuntos.hint,
+            code: errorPuntos.code,
+          });
         } else {
+          console.log(
+            `✅ Puntos cargados exitosamente: ${puntos?.length || 0} puntos`
+          );
+          if (puntos && puntos.length > 0) {
+            console.log(
+              "📍 Puntos encontrados:",
+              puntos.map((p) => ({
+                id: p.id,
+                nombre: p.nombre,
+                lat: p.latitud,
+                lng: p.longitud,
+              }))
+            );
+          }
           setPuntosEncuentro(puntos || []);
         }
       } catch (error) {
-        console.error("Error:", error);
+        console.error("❌ Error general en cargarDatos:", error);
+        console.log("🔍 Stack trace:", error);
       } finally {
+        console.log("🏁 Finalizando carga de datos, loading = false");
         setLoading(false);
       }
     };
@@ -269,56 +333,114 @@ function InteractiveMapClient() {
 
   // Actualizar marcadores cuando cambien los puntos de encuentro
   useEffect(() => {
-    console.log("🗺️ Verificando marcadores:", {
+    console.log("🗺️ useEffect de marcadores activado");
+    console.log("🗺️ Estado actual:", {
       mapInstance: !!mapInstanceRef.current,
+      mapReady: mapInstanceRef.current?.getContainer() ? "sí" : "no",
       puntosLength: puntosEncuentro.length,
-      puntos: puntosEncuentro,
+      isClient,
+      loading,
     });
 
-    if (mapInstanceRef.current && puntosEncuentro.length > 0) {
+    if (puntosEncuentro.length > 0) {
       console.log(
-        "✅ Creando marcadores para",
-        puntosEncuentro.length,
-        "puntos"
+        "📍 Puntos disponibles para marcadores:",
+        puntosEncuentro.map((p) => ({
+          id: p.id,
+          nombre: p.nombre,
+          lat: p.latitud,
+          lng: p.longitud,
+          ocupado: p.ocupado,
+        }))
+      );
+    }
+
+    if (mapInstanceRef.current && puntosEncuentro.length > 0) {
+      console.log("✅ Condiciones cumplidas - creando marcadores");
+      console.log(
+        `📍 Iniciando creación de ${puntosEncuentro.length} marcadores`
       );
 
-      import("leaflet").then((L) => {
-        // Agregar marcadores de puntos de encuentro con iconos personalizados
-        puntosEncuentro.forEach((punto, index) => {
-          console.log(`🎯 Creando marcador ${index + 1}:`, {
-            nombre: punto.nombre,
-            lat: punto.latitud,
-            lng: punto.longitud,
-            ocupado: punto.ocupado,
-            seguridad: punto.seguridad_nivel,
-          });
+      import("leaflet")
+        .then((L) => {
+          console.log("📦 Leaflet importado exitosamente para marcadores");
 
-          // Determinar el color según el estado de ocupación y nivel de seguridad
-          let color = "#22c55e"; // Verde por defecto
-          let borderColor = "white";
+          // Agregar marcadores de puntos de encuentro con iconos personalizados
+          puntosEncuentro.forEach((punto, index) => {
+            console.log(
+              `🎯 Procesando marcador ${index + 1}/${puntosEncuentro.length}:`,
+              {
+                nombre: punto.nombre,
+                lat: punto.latitud,
+                lng: punto.longitud,
+                ocupado: punto.ocupado,
+                seguridad: punto.seguridad_nivel,
+              }
+            );
 
-          if (punto.ocupado) {
-            color = "#ef4444"; // Rojo para puntos llenos
-            borderColor = "#fbbf24"; // Borde amarillo para destacar
-          } else if (punto.seguridad_nivel <= 2) {
-            color = "#f59e0b"; // Amarillo para nivel bajo
-          } else if (punto.seguridad_nivel >= 5) {
-            color = "#3b82f6"; // Azul para nivel máximo
-          }
+            // Validar coordenadas
+            if (!punto.latitud || !punto.longitud) {
+              console.error(`❌ Coordenadas inválidas para ${punto.nombre}:`, {
+                lat: punto.latitud,
+                lng: punto.longitud,
+              });
+              return;
+            }
 
-          const meetingIcon = L.divIcon({
-            html: `<div style="background-color: ${color}; border-radius: 50%; width: 15px; height: 15px; border: 2px solid ${borderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.3); position: relative; z-index: 1000;"></div>`,
-            className: "custom-div-icon",
-            iconSize: [15, 15],
-            iconAnchor: [7, 7],
-          });
+            if (
+              Math.abs(punto.latitud) > 90 ||
+              Math.abs(punto.longitud) > 180
+            ) {
+              console.error(
+                `❌ Coordenadas fuera de rango para ${punto.nombre}:`,
+                {
+                  lat: punto.latitud,
+                  lng: punto.longitud,
+                }
+              );
+              return;
+            }
 
-          try {
-            const marker = L.marker([punto.latitud, punto.longitud], {
-              icon: meetingIcon,
-            }).addTo(mapInstanceRef.current!);
+            // Determinar el color según el estado de ocupación y nivel de seguridad
+            let color = "#22c55e"; // Verde por defecto
+            let borderColor = "white";
 
-            marker.bindPopup(`
+            if (punto.ocupado) {
+              color = "#ef4444"; // Rojo para puntos llenos
+              borderColor = "#fbbf24"; // Borde amarillo para destacar
+            } else if (punto.seguridad_nivel <= 2) {
+              color = "#f59e0b"; // Amarillo para nivel bajo
+            } else if (punto.seguridad_nivel >= 5) {
+              color = "#3b82f6"; // Azul para nivel máximo
+            }
+
+            console.log(`🎨 Estilo del marcador ${index + 1}:`, {
+              color,
+              borderColor,
+            });
+
+            const meetingIcon = L.divIcon({
+              html: `<div style="background-color: ${color}; border-radius: 50%; width: 15px; height: 15px; border: 2px solid ${borderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.3); position: relative; z-index: 1000;"></div>`,
+              className: "custom-div-icon",
+              iconSize: [15, 15],
+              iconAnchor: [7, 7],
+            });
+
+            try {
+              console.log(
+                `📌 Creando marcador L.marker para ${punto.nombre}...`
+              );
+              const marker = L.marker([punto.latitud, punto.longitud], {
+                icon: meetingIcon,
+              });
+
+              console.log(
+                `🗺️ Añadiendo marcador al mapa para ${punto.nombre}...`
+              );
+              marker.addTo(mapInstanceRef.current!);
+
+              console.log(`💬 Configurando popup para ${punto.nombre}...`);
+              marker.bindPopup(`
               <div style="color: #1f2937; font-weight: 500; min-width: 220px; text-align: center;">
                 <strong style="color: #1f2937; font-size: 16px; display: block; margin-bottom: 6px;">${
                   punto.nombre
@@ -350,122 +472,63 @@ function InteractiveMapClient() {
                   </div>
                 </div>
 
-                ${
-                  punto.ocupado
-                    ? `<div style="
-                    background: linear-gradient(135deg, #ef4444, #dc2626);
-                    color: white;
-                    border: none;
-                    padding: 12px 16px;
-                    border-radius: 8px;
-                    font-size: 14px;
-                    font-weight: 700;
-                    margin-top: 10px;
-                    width: 100%;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 8px;
-                    cursor: not-allowed;
-                    opacity: 0.8;
-                  ">
-                    🚫 Punto Lleno
-                  </div>`
-                    : `<div style="
-                    display: flex;
-                    gap: 8px;
-                    margin-top: 10px;
-                    width: 100%;
-                  ">
-                    <button
-                      onclick="window.open('https://www.google.com/maps/dir/?api=1&destination=${
-                        punto.latitud
-                      },${
-                        punto.longitud
-                      }&destination_place_id=${encodeURIComponent(
-                        punto.nombre
-                      )}&travelmode=driving', '_blank')"
-                      style="
-                        background: linear-gradient(135deg, #10b981, #059669);
-                        color: white;
-                        border: none;
-                        padding: 12px 16px;
-                        border-radius: 8px;
-                        font-size: 13px;
-                        font-weight: 700;
-                        cursor: pointer;
-                        box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);
-                        transition: all 0.2s ease;
-                        flex: 1;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        gap: 6px;
-                      "
-                      onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 12px rgba(16, 185, 129, 0.4)';"
-                      onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(16, 185, 129, 0.3)';"
-                    >
-                      🚗 Navegar
-                    </button>
-                    <button
-                      onclick="window.open('https://www.google.com/maps/@${
-                        punto.latitud
-                      },${
-                        punto.longitud
-                      },3a,75y,90h,90t/data=!3m7!1e1!3m5!1s!2e0!6shttps:%2F%2Fstreetviewpixels-pa.googleapis.com%2Fv1%2Fthumbnail!7i16384!8i8192', '_blank')"
-                      style="
-                        background: linear-gradient(135deg, #3b82f6, #2563eb);
-                        color: white;
-                        border: none;
-                        padding: 12px 16px;
-                        border-radius: 8px;
-                        font-size: 13px;
-                        font-weight: 700;
-                        cursor: pointer;
-                        box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3);
-                        transition: all 0.2s ease;
-                        flex: 1;
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        gap: 6px;
-                      "
-                      onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 12px rgba(59, 130, 246, 0.4)';"
-                      onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(59, 130, 246, 0.3)';"
-                    >
-                      📱 Ver RA
-                    </button>
-                  </div>`
-                }
+                <div style="margin-top: 8px; padding: 6px; background: #dbeafe; border-radius: 6px; font-size: 11px; color: #1e40af;">
+                  📍 Coordenadas: ${punto.latitud.toFixed(
+                    4
+                  )}, ${punto.longitud.toFixed(4)}
+                </div>
               </div>
             `);
 
-            console.log(`✅ Marcador ${index + 1} creado:`, punto.nombre);
-          } catch (markerError) {
-            console.error(
-              `❌ Error creando marcador ${index + 1}:`,
-              markerError,
-              punto
-            );
-          }
-        });
+              console.log(
+                `✅ Marcador ${index + 1} creado exitosamente para ${
+                  punto.nombre
+                }`
+              );
+            } catch (markerError) {
+              console.error(
+                `❌ Error creando marcador ${index + 1} para ${punto.nombre}:`,
+                markerError
+              );
+              console.log("🔍 Detalles del error de marcador:", {
+                errorMessage:
+                  markerError instanceof Error
+                    ? markerError.message
+                    : markerError,
+                punto: punto,
+                mapExists: !!mapInstanceRef.current,
+              });
+            }
+          });
 
-        console.log(
-          "✅ Marcadores creados exitosamente:",
-          puntosEncuentro.length,
-          "puntos agregados al mapa"
-        );
-      });
+          console.log(
+            `🎉 Proceso de creación de marcadores completado - ${puntosEncuentro.length} puntos procesados`
+          );
+
+          // Invalidar el tamaño del mapa después de añadir marcadores
+          setTimeout(() => {
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.invalidateSize(true);
+              console.log(
+                "🗺️ Tamaño del mapa invalidado después de añadir marcadores"
+              );
+            }
+          }, 100);
+        })
+        .catch((leafletError) => {
+          console.error(
+            "❌ Error importando Leaflet para marcadores:",
+            leafletError
+          );
+        });
     } else {
-      console.log("⚠️ No se crearon marcadores:", {
+      console.log("⏳ Marcadores no creados - esperando condiciones:", {
         mapExists: !!mapInstanceRef.current,
-        pointsCount: puntosEncuentro.length,
-        reason: !mapInstanceRef.current
-          ? "Mapa no inicializado"
-          : "Sin puntos de encuentro",
+        puntosCount: puntosEncuentro.length,
+        waitingFor: !mapInstanceRef.current ? "mapa" : "puntos de encuentro",
       });
     }
-  }, [puntosEncuentro]);
+  }, [puntosEncuentro, isClient, loading]);
 
   // Limpiar el mapa cuando el componente se desmonte
   useEffect(() => {

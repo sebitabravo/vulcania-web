@@ -6,8 +6,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Users, Send, MessageCircle, Clock } from "lucide-react";
-import { supabase, type AvisoComunidad } from "@/lib/supabase";
+import {
+  supabase,
+  isSupabaseConfigured,
+  type AvisoComunidad,
+} from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
+// DEBUG: Importar funciones de test
+import {
+  testSupabaseConnection,
+  testTableStructure,
+  testUserCreation,
+  testMessageInsertion,
+} from "../supabase-test";
 
 export default function CommunityPanel() {
   const [avisos, setAvisos] = useState<AvisoComunidad[]>([]);
@@ -16,7 +27,31 @@ export default function CommunityPanel() {
   const [enviando, setEnviando] = useState(false);
   const { usuario } = useAuth();
 
+  // DEBUG: Log del estado del usuario
+  useEffect(() => {
+    console.log("🔧 Estado del usuario en CommunityPanel:", {
+      usuario,
+      hasId: usuario?.id,
+      isConfigured: isSupabaseConfigured(),
+    });
+  }, [usuario]);
+
+  // Verificar configuración de Supabase
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      console.error("❌ Supabase no está configurado correctamente");
+      setLoading(false);
+      return;
+    }
+  }, []);
+
   const cargarAvisos = async () => {
+    if (!supabase) {
+      console.error("❌ No se puede cargar avisos: Supabase no configurado");
+      setLoading(false);
+      return;
+    }
+
     try {
       const { data, error } = await supabase
         .from("avisos_comunidad")
@@ -48,6 +83,14 @@ export default function CommunityPanel() {
   };
 
   useEffect(() => {
+    if (!supabase) {
+      console.error(
+        "❌ No se puede configurar suscripción: Supabase no configurado"
+      );
+      setLoading(false);
+      return;
+    }
+
     cargarAvisos();
 
     // Suscribirse a cambios en tiempo real
@@ -57,7 +100,9 @@ export default function CommunityPanel() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "avisos_comunidad" },
         () => {
-          cargarAvisos();
+          if (supabase) {
+            cargarAvisos();
+          }
         }
       )
       .subscribe();
@@ -68,7 +113,57 @@ export default function CommunityPanel() {
   }, []);
 
   const enviarAviso = async () => {
-    if (!nuevoMensaje.trim() || !usuario) return;
+    if (!nuevoMensaje.trim() || !usuario) {
+      console.warn(
+        "No se puede enviar: mensaje vacío o usuario no autenticado"
+      );
+      return;
+    }
+
+    if (!supabase) {
+      console.error("❌ No se puede enviar aviso: Supabase no configurado");
+      return;
+    }
+
+    if (!usuario.id) {
+      console.error("❌ No se puede enviar aviso: Usuario sin ID");
+      return;
+    }
+
+    console.log("Enviando aviso:", {
+      usuario_id: usuario.id,
+      mensaje: nuevoMensaje.trim(),
+      usuario: usuario,
+    });
+
+    // VERIFICAR que el usuario existe en la base de datos
+    console.log("🔍 Verificando usuario en base de datos...");
+    try {
+      const { data: usuarioVerificado, error: errorVerificacion } =
+        await supabase
+          .from("usuarios")
+          .select("*")
+          .eq("id", usuario.id)
+          .single();
+
+      if (errorVerificacion || !usuarioVerificado) {
+        console.error("❌ Usuario no encontrado en base de datos:", {
+          usuario_id: usuario.id,
+          error: errorVerificacion,
+        });
+
+        alert(
+          "Error: Tu usuario no existe en la base de datos. Por favor, cierra sesión y vuelve a iniciar sesión."
+        );
+        limpiarSesion();
+        return;
+      }
+
+      console.log("✅ Usuario verificado en base de datos:", usuarioVerificado);
+    } catch (verificationError) {
+      console.error("❌ Error verificando usuario:", verificationError);
+      return;
+    }
 
     const mensajeTexto = nuevoMensaje.trim();
     setNuevoMensaje(""); // Limpiar inmediatamente para mejor UX
@@ -79,6 +174,7 @@ export default function CommunityPanel() {
         {
           usuario_id: usuario.id,
           mensaje: mensajeTexto,
+          estado: "activo",
         },
       ]).select(`
         *,
@@ -91,6 +187,12 @@ export default function CommunityPanel() {
 
       if (error) {
         console.error("Error enviando aviso:", error);
+        console.error("Detalles del error:", {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+        });
         setNuevoMensaje(mensajeTexto); // Restaurar mensaje si hay error
         return;
       }
@@ -139,8 +241,52 @@ export default function CommunityPanel() {
     return "info";
   };
 
+  // Función para limpiar sesión corrupta
+  const limpiarSesion = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("vulcania_usuario");
+      window.location.reload();
+    }
+  };
+
+  // DEBUG: Agregar función de test
+  const runDebugTests = async () => {
+    console.log("🔧 INICIANDO TESTS DE DEBUG...");
+    await testSupabaseConnection();
+    await testTableStructure();
+    if (usuario?.telefono) {
+      const testUser = await testUserCreation(usuario.telefono);
+      if (testUser) {
+        await testMessageInsertion(testUser.id);
+      }
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* DEBUG: Botón de test temporal */}
+      {process.env.NODE_ENV === "development" && (
+        <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg p-4">
+          <h4 className="text-yellow-400 font-medium mb-2">🔧 Debug Mode</h4>
+          <div className="flex gap-2">
+            <Button
+              onClick={runDebugTests}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white text-sm"
+              size="sm"
+            >
+              Ejecutar Tests de Supabase
+            </Button>
+            <Button
+              onClick={limpiarSesion}
+              className="bg-red-600 hover:bg-red-700 text-white text-sm"
+              size="sm"
+            >
+              Limpiar Sesión
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-semibold text-white flex items-center">
           <Users className="h-6 w-6 mr-2 text-blue-500" />
@@ -164,11 +310,16 @@ export default function CommunityPanel() {
         </CardHeader>
         <CardContent className="space-y-4">
           <Textarea
-            placeholder="¿Cómo está la situación en tu sector? Comparte información útil para la comunidad..."
+            placeholder={
+              isSupabaseConfigured()
+                ? "¿Cómo está la situación en tu sector? Comparte información útil para la comunidad..."
+                : "Configuración de base de datos requerida para enviar mensajes..."
+            }
             value={nuevoMensaje}
             onChange={(e) => setNuevoMensaje(e.target.value)}
             className="bg-gray-800 border-gray-700 text-white placeholder-gray-500 min-h-[100px] text-base"
             maxLength={500}
+            disabled={!isSupabaseConfigured()}
           />
           <div className="flex items-center justify-between">
             <span className="text-gray-500 text-sm">
@@ -176,8 +327,10 @@ export default function CommunityPanel() {
             </span>
             <Button
               onClick={enviarAviso}
-              disabled={!nuevoMensaje.trim() || enviando}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6"
+              disabled={
+                !nuevoMensaje.trim() || enviando || !isSupabaseConfigured()
+              }
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 disabled:bg-gray-600 disabled:cursor-not-allowed"
             >
               {enviando ? (
                 <div className="flex items-center space-x-2">
@@ -197,7 +350,15 @@ export default function CommunityPanel() {
 
       {/* Lista de avisos */}
       <div className="space-y-4">
-        {loading ? (
+        {!isSupabaseConfigured() ? (
+          <div className="text-center py-8">
+            <MessageCircle className="h-12 w-12 text-red-500 mx-auto mb-2" />
+            <p className="text-red-400">Error de configuración</p>
+            <p className="text-gray-500 text-sm">
+              Supabase no está configurado correctamente
+            </p>
+          </div>
+        ) : loading ? (
           <div className="text-center py-8">
             <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
             <p className="text-gray-400">Cargando mensajes...</p>

@@ -18,22 +18,6 @@ function InteractiveMapClient() {
   const [ubicacionSeleccionada, setUbicacionSeleccionada] =
     useState<string>("Pucón");
 
-  // Función para generar enlace de Google Maps
-  const generarEnlaceGoogleMaps = (
-    lat: number,
-    lng: number,
-    nombre: string
-  ) => {
-    const encodedNombre = encodeURIComponent(nombre);
-    return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=${encodedNombre}&travelmode=driving`;
-  };
-
-  // Función para abrir Google Maps
-  const abrirGoogleMaps = (lat: number, lng: number, nombre: string) => {
-    const enlace = generarEnlaceGoogleMaps(lat, lng, nombre);
-    window.open(enlace, "_blank");
-  };
-
   // Asegurar que estamos en el cliente
   useEffect(() => {
     setIsClient(true);
@@ -50,6 +34,12 @@ function InteractiveMapClient() {
   useEffect(() => {
     const cargarDatos = async () => {
       try {
+        // Verificar que Supabase esté configurado
+        if (!supabase) {
+          console.error("Supabase no está configurado");
+          return;
+        }
+
         // Cargar puntos de encuentro
         const { data: puntos, error: errorPuntos } = await supabase
           .from("puntos_encuentro")
@@ -114,27 +104,33 @@ function InteractiveMapClient() {
           zoomLevel = 13;
         }
 
-        const map = L.map(mapRef.current!, {
+        // Limpiar mapa existente si existe
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.remove();
+          mapInstanceRef.current = null;
+        }
+
+        // Verificar que el contenedor del mapa existe y está vacío
+        if (!mapRef.current) {
+          console.error("Map container not found");
+          return;
+        }
+
+        // Limpiar el contenido del contenedor
+        mapRef.current.innerHTML = "";
+
+        const map = L.map(mapRef.current, {
           center: [centerLat, centerLng],
           zoom: zoomLevel,
         });
+
+        // Guardar referencia del mapa
+        mapInstanceRef.current = map;
 
         // Añadir capa base
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: "© OpenStreetMap contributors",
         }).addTo(map);
-
-        // Capa WMS de SERNAGEOMIN (simulada)
-        const peligroVolcanico = L.tileLayer.wms(
-          "https://geoportal.sernageomin.cl/geoserver/wms",
-          {
-            layers: "geoportal:peligros_volcanicos_chile",
-            format: "image/png",
-            transparent: true,
-            opacity: 0.7,
-            attribution: "© SERNAGEOMIN",
-          }
-        );
 
         // Marcador del volcán
         const volcanoIcon = L.divIcon({
@@ -150,9 +146,39 @@ function InteractiveMapClient() {
             "<strong>Volcán Villarrica</strong><br>Estado: Monitoreado<br>Altura: 2.847 msnm"
           );
 
-        // Añadir puntos de encuentro
-        const puntosGroup = L.layerGroup();
+        // Configurar capas
+        const baseMaps = {
+          OpenStreetMap: L.tileLayer(
+            "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            {
+              attribution: "© OpenStreetMap contributors",
+            }
+          ),
+          Satélite: L.tileLayer(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            {
+              attribution:
+                "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
+            }
+          ),
+        };
 
+        L.control.layers(baseMaps).addTo(map);
+        baseMaps["OpenStreetMap"].addTo(map);
+
+        // Añadir control de escala
+        L.control.scale({ imperial: false }).addTo(map);
+
+        mapInstanceRef.current = map;
+      });
+    }
+  }, [isClient, loading, ubicacionSeleccionada]);
+
+  // Actualizar marcadores cuando cambien los puntos de encuentro
+  useEffect(() => {
+    if (mapInstanceRef.current && puntosEncuentro.length > 0) {
+      import("leaflet").then((L) => {
+        // Agregar marcadores de puntos de encuentro con iconos personalizados
         puntosEncuentro.forEach((punto) => {
           // Determinar el color según el estado de ocupación y nivel de seguridad
           let color = "#22c55e"; // Verde por defecto
@@ -176,7 +202,7 @@ function InteractiveMapClient() {
 
           L.marker([punto.latitud, punto.longitud], {
             icon: meetingIcon,
-          }).addTo(puntosGroup).bindPopup(`
+          }).addTo(mapInstanceRef.current!).bindPopup(`
               <div style="color: #1f2937; font-weight: 500; min-width: 220px; text-align: center;">
                 <strong style="color: #1f2937; font-size: 16px; display: block; margin-bottom: 6px;">${
                   punto.nombre
@@ -195,6 +221,11 @@ function InteractiveMapClient() {
                     <span style="font-weight: 600;">📊</span> Estado: <strong style="color: ${
                       punto.ocupado ? "#ef4444" : "#22c55e"
                     };">${punto.ocupado ? "LLENO" : "DISPONIBLE"}</strong>
+                  </div>
+                  <div style="color: #4b5563; font-size: 12px; margin-bottom: 4px;">
+                    <span style="font-weight: 600;">🚶</span> Tiempo a pie: <strong>${
+                      punto.tiempo_aprox_pie
+                    } min</strong>
                   </div>
                   <div style="color: #4b5563; font-size: 12px;">
                     <span style="font-weight: 600;">🛡️</span> Seguridad: <strong>${
@@ -293,42 +324,19 @@ function InteractiveMapClient() {
               </div>
             `);
         });
-
-        puntosGroup.addTo(map);
-
-        // Configurar capas
-        const baseMaps = {
-          OpenStreetMap: L.tileLayer(
-            "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-            {
-              attribution: "© OpenStreetMap contributors",
-            }
-          ),
-          Satélite: L.tileLayer(
-            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            {
-              attribution:
-                "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
-            }
-          ),
-        };
-
-        const overlayMaps = {
-          "Zonas de Peligro Volcánico": peligroVolcanico,
-          "Puntos de Encuentro": puntosGroup,
-        };
-
-        L.control.layers(baseMaps, overlayMaps).addTo(map);
-        baseMaps["OpenStreetMap"].addTo(map);
-        peligroVolcanico.addTo(map);
-
-        // Añadir control de escala
-        L.control.scale({ imperial: false }).addTo(map);
-
-        mapInstanceRef.current = map;
       });
     }
-  }, [isClient, loading, puntosEncuentro, ubicacionSeleccionada]);
+  }, [puntosEncuentro]);
+
+  // Limpiar el mapa cuando el componente se desmonte
+  useEffect(() => {
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, []);
 
   const cambiarUbicacion = (ubicacion: string) => {
     setUbicacionSeleccionada(ubicacion);

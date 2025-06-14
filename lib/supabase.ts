@@ -1,20 +1,29 @@
 import { createClient } from "@supabase/supabase-js"
 
-// Verificar si estamos en desarrollo
-const isDevelopment = process.env.NODE_ENV === 'development'
+// Verificar variables de entorno requeridas
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
 
-// URLs por defecto para desarrollo (reemplaza con tus valores reales)
-let supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://your-project.supabase.co"
-let supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "your-anon-key"
+// Validación de variables de entorno
+if (!supabaseUrl || !supabaseAnonKey) {
+  const missingVars: string[] = []
+  if (!supabaseUrl) missingVars.push('NEXT_PUBLIC_SUPABASE_URL')
+  if (!supabaseAnonKey) missingVars.push('NEXT_PUBLIC_SUPABASE_ANON_KEY')
 
-// En desarrollo, usar valores mock si no están configurados
-if (isDevelopment && (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)) {
-  console.warn("⚠️  Variables de entorno de Supabase no configuradas. Usando valores mock para desarrollo.")
-  supabaseUrl = "https://demo.supabase.co"
-  supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
+  console.error('❌ Variables de entorno de Supabase no configuradas:', missingVars.join(', '))
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`Variables de entorno de Supabase faltantes en producción: ${missingVars.join(', ')}`)
+  }
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Solo crear el cliente si tenemos las variables necesarias
+export const supabase = supabaseUrl && supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null
+
+// Helper para verificar configuración
+export const isSupabaseConfigured = () => Boolean(supabase)
 
 // Tipos para las tablas
 export interface Usuario {

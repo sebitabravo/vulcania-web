@@ -22,45 +22,68 @@ function InteractiveMapClient() {
   useEffect(() => {
     setIsClient(true);
 
-    // Cargar CSS de Leaflet dinámicamente con manejo de errores
+    // Cargar CSS de Leaflet de manera más agresiva
     if (typeof window !== "undefined") {
-      const existingLink = document.querySelector('link[href*="leaflet.css"]');
+      // Remover cualquier CSS previo de Leaflet
+      const existingLinks = document.querySelectorAll('link[href*="leaflet"]');
+      existingLinks.forEach((link) => link.remove());
 
-      if (!existingLink) {
-        const link = document.createElement("link");
-        link.rel = "stylesheet";
-        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-        link.integrity = "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=";
-        link.crossOrigin = "";
-        link.onload = () => {
-          console.log("✅ Leaflet CSS cargado correctamente");
+      // Agregar CSS crítico inline primero
+      const criticalStyle = document.createElement("style");
+      criticalStyle.textContent = `
+        .leaflet-container {
+          height: 100% !important;
+          width: 100% !important;
+          background: #1f2937 !important;
+          font-family: inherit !important;
+        }
 
-          // Agregar CSS adicional para marcadores personalizados
-          const customStyle = document.createElement("style");
-          customStyle.textContent = `
-            .custom-div-icon {
-              background: transparent !important;
-              border: none !important;
-            }
+        .leaflet-tile {
+          max-width: none !important;
+          max-height: none !important;
+          border: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
 
-            .leaflet-popup-content-wrapper {
-              border-radius: 8px !important;
-            }
+        .leaflet-tile-container {
+          overflow: visible !important;
+        }
 
-            .leaflet-popup-content {
-              margin: 0 !important;
-              line-height: 1.4 !important;
-            }
+        .leaflet-tile-pane {
+          transform-origin: 0 0 !important;
+        }
 
-            .leaflet-container {
-              background: #1f2937 !important;
-            }
-          `;
-          document.head.appendChild(customStyle);
-        };
-        link.onerror = () => console.error("❌ Error cargando Leaflet CSS");
-        document.head.appendChild(link);
-      }
+        .custom-div-icon {
+          background: transparent !important;
+          border: none !important;
+        }
+      `;
+      document.head.insertBefore(criticalStyle, document.head.firstChild);
+
+      // Luego cargar el CSS principal de Leaflet
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      link.crossOrigin = "";
+      link.onload = () => {
+        console.log("✅ Leaflet CSS cargado correctamente");
+
+        // Agregar más CSS específico después de cargar
+        const additionalStyle = document.createElement("style");
+        additionalStyle.textContent = `
+          .leaflet-popup-content-wrapper {            border-radius: 8px !important;
+          }
+
+          .leaflet-popup-content {
+            margin: 0 !important;
+            line-height: 1.4 !important;
+          }
+        `;
+        document.head.appendChild(additionalStyle);
+      };
+      link.onerror = () => console.error("❌ Error cargando Leaflet CSS");
+      document.head.appendChild(link);
     }
   }, []);
 
@@ -160,15 +183,67 @@ function InteractiveMapClient() {
         const map = L.map(mapRef.current, {
           center: [centerLat, centerLng],
           zoom: zoomLevel,
+          preferCanvas: false,
+          zoomControl: true,
         });
+
+        // Invalidar el tamaño del mapa múltiples veces para asegurar renderizado correcto
+        setTimeout(() => {
+          map.invalidateSize(true);
+          console.log("🗺️ Primera invalidación de tamaño");
+        }, 50);
+
+        setTimeout(() => {
+          map.invalidateSize(true);
+          console.log("🗺️ Segunda invalidación de tamaño");
+        }, 200);
+
+        setTimeout(() => {
+          map.invalidateSize(true);
+          console.log("🗺️ Tercera invalidación de tamaño");
+        }, 500);
 
         // Guardar referencia del mapa
         mapInstanceRef.current = map;
 
-        // Añadir capa base
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-          attribution: "© OpenStreetMap contributors",
-        }).addTo(map);
+        // Configurar capas base con opciones optimizadas
+        const baseMaps = {
+          OpenStreetMap: L.tileLayer(
+            "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            {
+              attribution: "© OpenStreetMap contributors",
+              maxZoom: 19,
+              tileSize: 256,
+              zoomOffset: 0,
+              updateWhenIdle: false,
+              updateWhenZooming: false,
+              keepBuffer: 2,
+            }
+          ),
+          Satélite: L.tileLayer(
+            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            {
+              attribution: "Tiles &copy; Esri",
+              maxZoom: 18,
+              tileSize: 256,
+              zoomOffset: 0,
+              updateWhenIdle: false,
+              updateWhenZooming: false,
+              keepBuffer: 2,
+            }
+          ),
+        };
+
+        // Agregar capa base por defecto con evento de carga
+        const defaultLayer = baseMaps["OpenStreetMap"];
+        defaultLayer.on("load", () => {
+          console.log("✅ Tiles de mapa cargados");
+          map.invalidateSize(true);
+        });
+        defaultLayer.addTo(map);
+
+        // Agregar control de capas
+        L.control.layers(baseMaps).addTo(map);
 
         // Marcador del volcán
         const volcanoIcon = L.divIcon({
@@ -183,26 +258,6 @@ function InteractiveMapClient() {
           .bindPopup(
             "<strong>Volcán Villarrica</strong><br>Estado: Monitoreado<br>Altura: 2.847 msnm"
           );
-
-        // Configurar capas
-        const baseMaps = {
-          OpenStreetMap: L.tileLayer(
-            "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-            {
-              attribution: "© OpenStreetMap contributors",
-            }
-          ),
-          Satélite: L.tileLayer(
-            "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-            {
-              attribution:
-                "Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
-            }
-          ),
-        };
-
-        L.control.layers(baseMaps).addTo(map);
-        baseMaps["OpenStreetMap"].addTo(map);
 
         // Añadir control de escala
         L.control.scale({ imperial: false }).addTo(map);
@@ -524,8 +579,13 @@ function InteractiveMapClient() {
 
       <div
         ref={mapRef}
-        className="w-full h-96 rounded-2xl border border-gray-800"
-        style={{ minHeight: "400px" }}
+        className="w-full h-96 rounded-2xl border border-gray-800 overflow-hidden"
+        style={{
+          minHeight: "400px",
+          height: "400px",
+          position: "relative",
+          zIndex: 1,
+        }}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">

@@ -1,8 +1,8 @@
 import { createClient } from "@supabase/supabase-js"
 
 // Verificar variables de entorno requeridas
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 // Validación de variables de entorno
 if (!supabaseUrl || !supabaseAnonKey) {
@@ -17,7 +17,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
   }
 }
 
-// Solo crear el cliente si tenemos las variables necesarias
+// Crear el cliente de Supabase
 export const supabase = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null
@@ -143,6 +143,16 @@ export interface MensajeChat {
   receptor_id: string
   mensaje: string
   fecha_envio: string
+  leido?: boolean // Campo para marcar mensajes como leídos
+  fecha_lectura?: string // Cuándo se leyó el mensaje
   emisor?: Usuario
   receptor?: Usuario
+}
+
+// Interfaz para estadísticas de conversación
+export interface EstadisticasConversacion {
+  usuario: Usuario
+  ultimoMensaje?: MensajeChat
+  mensajesNoLeidos: number
+  fechaUltimaActividad: string
 }

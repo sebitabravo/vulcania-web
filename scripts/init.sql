@@ -131,7 +131,9 @@ CREATE TABLE mensajes_chat (
     emisor_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
     receptor_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
     mensaje TEXT NOT NULL,
-    fecha_envio TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    fecha_envio TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    leido BOOLEAN DEFAULT FALSE,
+    fecha_lectura TIMESTAMP WITH TIME ZONE
 );
 
 -- Crear tabla de logs del sistema
@@ -153,6 +155,7 @@ CREATE INDEX idx_alertas_volcan_fecha ON alertas_volcan(ultima_actualizacion DES
 CREATE INDEX idx_avisos_comunidad_fecha ON avisos_comunidad(fecha_creacion DESC);
 CREATE INDEX idx_mensajes_chat_fecha ON mensajes_chat(fecha_envio DESC);
 CREATE INDEX idx_mensajes_chat_usuarios ON mensajes_chat(emisor_id, receptor_id);
+CREATE INDEX idx_mensajes_no_leidos ON mensajes_chat (receptor_id, emisor_id, leido) WHERE leido IS FALSE OR leido IS NULL;
 CREATE INDEX idx_recomendaciones_nivel_orden ON recomendaciones_nivel(nivel, orden);
 CREATE INDEX idx_puntos_encuentro_ubicacion ON puntos_encuentro(latitud, longitud);
 CREATE INDEX idx_puntos_encuentro_ocupado ON puntos_encuentro(ocupado);
@@ -404,6 +407,7 @@ INSERT INTO acciones_requeridas (nivel_alerta, evacuar_zona_riesgo, activar_red_
 
 -- Insertar datos de ejemplo para usuarios
 INSERT INTO usuarios (nombre, telefono) VALUES
+('Demo', '+56900000000'),
 ('María González', '+56912345678'),
 ('Carlos Muñoz', '+56987654321'),
 ('Ana Pérez', '+56911111111'),
@@ -413,42 +417,46 @@ INSERT INTO usuarios (nombre, telefono) VALUES
 -- Insertar puntos de encuentro
 INSERT INTO puntos_encuentro
 (nombre, direccion, latitud, longitud, capacidad, seguridad_nivel, tiempo_aprox_pie, ocupado) VALUES
-('Mirador Puente Pellaifa', 'Puente Pellaifa, camino a Coñaripe', -39.28835, -72.21967, 150, 4, 30, FALSE),
-('Agrupación Mujeres Huincul Zomo \"Milimili\"', 'Sector Milimili, Pucón', -39.52940, -72.05500, 120, 3, 45, FALSE),
-('Familia Cheuquepán Palo Blanco', 'Sector Cheuquepán–Palo Blanco, Pucón', -39.52940, -72.05885, 80, 3, 40, FALSE),
-('Cementerio Pucura', 'Sector Pucura, Pucón', -39.51390, -72.03170, 200, 4, 35, FALSE),
-('Familia Lefinao', 'Félix Lefinao, Pucón', -39.51390, -72.07660, 75, 3, 50, FALSE),
-('Poly Pinilla Challupen Bajo', 'Challupén Bajo, Pucón', -39.30950, -72.15920, 80, 3, 55, FALSE),
-('Sede Ambrosio', 'Sector Ambrosio, Pucón', -39.32000, -72.17000, 100, 3, 60, FALSE),
-('Punolef', 'Sector Punolef, Coñaripe/Pucón', -39.33000, -72.14000, 70, 2, 65, FALSE),
-('Escuela Alihuén', 'Challupén, comuna Villarrica', -39.35000, -72.14000, 60, 3, 70, FALSE),
-('Ensenada Cabañas Norma Punulef', 'Ensenada, Lican Ray', -39.31500, -72.20000, 120, 4, 75, FALSE),
-('Cementerio Putabla Predio Renato Vallejos', 'Sector Putabla, Pucón', -39.50800, -72.06000, 100, 3, 80, FALSE),
-('Voipir Seco Predio Hugo Vera', 'Voipir Seco alto, Pucón', -39.31000, -72.03500, 70, 2, 85, FALSE),
-('Voipir Seco Predio Kolping', 'Voipir Seco alto, Pucón', -39.31200, -72.03700, 70, 2, 90, FALSE),
-('Huincacara Sur Predio Juana Montecinos', 'Sector Huincacara Sur, Villarrica', -39.29500, -72.20000, 80, 3, 95, FALSE),
-('Huincacara Norte Cerro El Pirao', 'Cerro El Pirao, Huincacara Norte, Villarrica', -39.29000, -72.19500, 60, 3, 100, FALSE),
-('Loncotraro - Helipuerto Hotel Park Lake', 'Hotel Park Lake, Loncotraro, Pucón', -39.31050, -72.03020, 120, 4, 105, FALSE),
-('Los Riscos', 'Sector Los Riscos, Pucón', -39.28000, -72.00000, 100, 3, 110, FALSE),
-('Candelaria', 'Camino Villarrica-Pucón, sector Candelaria', -39.27500, -72.01000, 80, 3, 115, FALSE),
-('Los Calabozos', 'Sector Los Calabozos, Pucón', -39.28500, -71.99000, 90, 3, 120, FALSE),
-('Península', 'Península Pucón (entre Río Pucon y Lago Villarrica)', -39.27000, -71.97000, 150, 4, 125, FALSE),
-('Escuela Quelhue Quelhue Alto', 'Escuela Quelhue, sector Quelhue Alto, Pucón', -39.26153, -71.92032, 80, 3, 130, FALSE),
-('Mirador Camino al Volcán', 'Camino Pucón–Caburgua, km aproximado con vista al volcán', -39.24500, -71.90000, 100, 4, 135, FALSE),
-('Familia Ñanculipe', 'Sector Ñanculipe, Pucón', -39.30000, -72.05000, 60, 2, 140, FALSE),
-('Pino Huacho Predio Pedro Vásquez', 'Sector Pino Huacho, Pucón', -39.28000, -72.02000, 70, 3, 145, FALSE),
-('Escuela Estadio Cudico', 'Sector Cudico, Pucón', -39.30000, -72.04000, 90, 3, 150, FALSE),
-('Hincacara Sur Iglesia Pentecostal Calfutúe', 'Iglesia Pentecostal Calfutúe, Hincacara Sur', -39.29000, -72.19000, 80, 3, 155, FALSE),
-('Conquil Predio Julio Bustos', 'Sector Conquil, predio Julio Bustos, Villarrica', -39.29500, -72.18500, 70, 3, 160, FALSE),
-('Estrella Blanca Predio Carmen San Martín', 'Sector Estrella Blanca, Loncotraro Alto', -39.30000, -72.17000, 90, 4, 165, FALSE),
-('Loncotraro Alto Country Pucón', 'Entrada Country Pucón, Loncotraro Alto', -39.30200, -72.16500, 100, 4, 170, FALSE),
-('Piedra Amarilla Club de Huasos', 'Sector Piedra Amarilla, Club de Huasos', -39.31000, -72.15000, 110, 4, 175, FALSE),
-('Cerdúo 1', 'Sector Cerdúo, Pucón', -39.29050, -72.14050, 60, 2, 180, FALSE),
-('Cerdúo 2', 'Sector Cerdúo, Pucón', -39.29100, -72.14100, 60, 2, 185, FALSE),
-('Palguín', 'Sector Palguín, Pucón', -39.29550, -72.14550, 80, 3, 190, FALSE);
+-- Sector Coñaripe / Pucura – informe 2021-01
+('Mirador Puente Pellaifa',                   'Puente Pellaifa, camino a Coñaripe',      -39.588915, -72.019553, 150, 4, 30, FALSE),
+('Agrupación Mujeres Huincul Zomo "Mili-Mili"','Sector Milimili, Pucón',                  -39.512830, -72.031753, 120, 3, 45, FALSE),
+('Familia Cheuquepán Palo Blanco',            'Sector Cheuquepán–Palo Blanco, Pucón',    -39.527723, -72.052743,  80, 3, 40, FALSE),
+('Cementerio Pucura',                         'Sector Pucura, Pucón',                    -39.515153, -72.062183, 200, 4, 35, FALSE),
+('Familia Lefinao',                            'Félix Lefinao, Pucón',                    -39.513860, -72.076636,  75, 3, 50, FALSE),
+('Poly Pinilla Challupén Bajo',               'Challupén Bajo, Pucón',                   -39.492506, -72.063614,  80, 3, 55, FALSE),
+
+-- Sector Chaillupén / Voipir / Lican Ray – informe 2021-04
+('Sede Ambrosio',                             'Sector Ambrosio, Pucón',                  -39.492356, -72.103197, 100, 3, 60, FALSE),
+('Punulef',                                   'Sector Punulef, Coñaripe/Pucón',          -39.483065, -72.137238,  70, 2, 65, FALSE),
+('Escuela Alihuén',                           'Challupén, comuna Villarrica',            -39.485917, -72.092118,  60, 3, 70, FALSE),
+('Ensenada Cabañas Norma Punulef',            'Ensenada, Lican Ray',                     -39.483065, -72.137238, 120, 4, 75, FALSE),
+('Cementerio Putabla Predio Renato Vallejos', 'Sector Putabla, Pucón',                   -39.481564, -72.163816, 100, 3, 80, FALSE),
+('Voipir Seco Predio Hugo Vera',              'Voipir Seco Alto, Pucón',                 -39.415442, -72.059815,  70, 2, 85, FALSE),
+('Voipir Seco Predio Kolping',                'Voipir Seco Alto, Pucón',                 -39.395078, -72.094364,  70, 2, 90, FALSE),
+('Huincacara Sur Predio Juana Montecinos',    'Huincacara Sur, Villarrica',              -39.367774, -72.155232,  80, 3, 95, FALSE),
+('Huincacara Norte Cerro El Pirao',           'Cerro El Pirao, Huincacara Norte',        -39.369918, -72.078219,  60, 3,100, FALSE),
+('Loncotraro – Helipuerto Hotel Park Lake',   'Hotel Park Lake, Loncotraro, Pucón',      -39.301784, -72.088523, 120, 4,105, FALSE),
+('Los Riscos',                                'Sector Los Riscos, Pucón',                -39.317321, -72.033522, 100, 3,110, FALSE),
+('Candelaria',                                'Camino Villarrica-Pucón, Candelaria',     -39.321525, -72.009452,  80, 3,115, FALSE),
+('Los Calabozos',                             'Sector Los Calabozos, Pucón',             -39.303147, -71.936115,  90, 3,120, FALSE),
+('Península',                                 'Península Pucón (entre río y lago)',      -39.270851, -71.992331, 150, 4,125, FALSE),
+('Escuela Quelhue Quelhue Alto',              'Escuela Quelhue Alto, Pucón',             -39.257567, -71.917710,  80, 3,130, FALSE),
+('Mirador Camino al Volcán',                  'Camino Pucón–Caburgua, km c/ vista',      -39.352156, -71.977432, 100, 4,135, FALSE),
+('Familia Ñanculipe',                         'Sector Ñanculipe, Pucón',                 -39.569021, -71.980258,  60, 2,140, FALSE),
+('Pino Huacho Predio Pedro Vásquez',          'Sector Pino Huacho, Pucón',               -39.444890, -72.047701,  70, 3,145, FALSE),
+('Escuela Estadio Cudico',                    'Sector Cudico, Pucón',                    -39.438448, -72.119073,  90, 3,150, FALSE),
+('Hincacara Sur Iglesia Pentecostal Calfutúe','Iglesia Pentecostal Calfutúe, Huincacara', -39.362367, -72.203810,  80, 3,155, FALSE),
+('Conquil Predio Julio Bustos',               'Sector Conquil, predio Julio Bustos',     -39.343760, -72.152018,  70, 3,160, FALSE),
+('Estrella Blanca Predio Carmen San Martín',  'Sector Estrella Blanca, Loncotraro Alto', -39.354081, -72.042908,  90, 4,165, FALSE),
+('Loncotraro Alto Country Pucón',             'Entrada Country Pucón, Loncotraro Alto',  -39.341939, -72.048641, 100, 4,170, FALSE),
+('Piedra Amarilla Club de Huasos',            'Sector Piedra Amarilla, Club de Huasos',  -39.354081, -72.042908, 110, 4,175, FALSE),
+('Cerdúo 1',                                  'Sector Cerdúo, Pucón',                    -39.296860, -71.872014,  60, 2,180, FALSE),
+('Cerdúo 2',                                  'Sector Cerdúo, Pucón',                    -39.302780, -71.897940,  60, 2,185, FALSE),
+('Palguín',                                   'Sector Palguín, Pucón',                   -39.398066, -71.783160,  80, 3,190, FALSE);
 
 -- Insertar avisos de la comunidad
 INSERT INTO avisos_comunidad (usuario_id, mensaje) VALUES
+((SELECT id FROM usuarios WHERE nombre = 'Demo'), 'Sistema inicializado correctamente. ¡Bienvenido a Vulcania!'),
 ((SELECT id FROM usuarios WHERE nombre = 'María González'), 'Todo tranquilo por sector centro de Pucón'),
 ((SELECT id FROM usuarios WHERE nombre = 'Carlos Muñoz'), 'Veo mucha actividad en el volcán desde mi casa'),
 ((SELECT id FROM usuarios WHERE nombre = 'Ana Pérez'), 'Familia segura, nos dirigimos al punto de encuentro'),
@@ -457,6 +465,10 @@ INSERT INTO avisos_comunidad (usuario_id, mensaje) VALUES
 
 -- Insertar algunos mensajes de chat de ejemplo
 INSERT INTO mensajes_chat (emisor_id, receptor_id, mensaje) VALUES
+((SELECT id FROM usuarios WHERE nombre = 'María González'), (SELECT id FROM usuarios WHERE nombre = 'Demo'), 'Hola Demo, ¿cómo funciona el sistema de chat?'),
+((SELECT id FROM usuarios WHERE nombre = 'Demo'), (SELECT id FROM usuarios WHERE nombre = 'María González'), 'Hola María, funciona perfecto. Puedes enviar mensajes a cualquier usuario registrado.'),
+((SELECT id FROM usuarios WHERE nombre = 'Carlos Muñoz'), (SELECT id FROM usuarios WHERE nombre = 'Demo'), 'Demo, ¿el sistema muestra notificaciones en tiempo real?'),
+((SELECT id FROM usuarios WHERE nombre = 'Demo'), (SELECT id FROM usuarios WHERE nombre = 'Carlos Muñoz'), 'Sí Carlos, las notificaciones aparecen inmediatamente cuando recibes un mensaje.'),
 ((SELECT id FROM usuarios WHERE nombre = 'María González'), (SELECT id FROM usuarios WHERE nombre = 'Carlos Muñoz'), 'Hola Carlos, ¿cómo está la situación por tu sector?'),
 ((SELECT id FROM usuarios WHERE nombre = 'Carlos Muñoz'), (SELECT id FROM usuarios WHERE nombre = 'María González'), 'Hola María, todo tranquilo por acá. ¿Y por el centro?'),
 ((SELECT id FROM usuarios WHERE nombre = 'Ana Pérez'), (SELECT id FROM usuarios WHERE nombre = 'Juan Martínez'), 'Juan, ¿sabes si el punto de encuentro del estadio está operativo?'),
@@ -471,14 +483,20 @@ DECLARE
     total_puntos INTEGER;
     puntos_disponibles INTEGER;
     puntos_ocupados INTEGER;
+    total_usuarios INTEGER;
+    usuario_demo TEXT;
 BEGIN
     SELECT COUNT(*) INTO total_puntos FROM puntos_encuentro;
     SELECT COUNT(*) INTO puntos_disponibles FROM puntos_encuentro WHERE ocupado = FALSE;
     SELECT COUNT(*) INTO puntos_ocupados FROM puntos_encuentro WHERE ocupado = TRUE;
+    SELECT COUNT(*) INTO total_usuarios FROM usuarios;
+    SELECT nombre INTO usuario_demo FROM usuarios WHERE nombre = 'Demo';
 
     RAISE NOTICE '=== BASE DE DATOS INICIALIZADA EXITOSAMENTE ===';
+    RAISE NOTICE 'Total de usuarios: % (incluyendo usuario Demo: %)', total_usuarios, usuario_demo;
     RAISE NOTICE 'Total de puntos de encuentro: %', total_puntos;
     RAISE NOTICE 'Puntos disponibles: %', puntos_disponibles;
     RAISE NOTICE 'Puntos ocupados: %', puntos_ocupados;
+    RAISE NOTICE 'Columnas de mensajes leídos: CONFIGURADAS';
     RAISE NOTICE '=============================================';
 END $$;

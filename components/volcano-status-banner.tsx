@@ -158,26 +158,160 @@ export default function VolcanoStatusBanner({
   const [alertDismissed, setAlertDismissed] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [isPlayingSound, setIsPlayingSound] = useState(false);
+  const [soundInterval, setSoundInterval] = useState<NodeJS.Timeout | null>(
+    null
+  );
+  const [emergencyMode, setEmergencyMode] = useState(false);
   const previousLevelRef = useRef<string | null>(null);
 
-  // Función para reproducir sonido de alerta
+  // Datos de emergencia falsos para pruebas
+  const emergencyData = {
+    alerta: {
+      id: "emergency-test",
+      nivel_alerta: "rojo",
+      descripcion:
+        "🚨 EMERGENCIA VOLCÁNICA DE PRUEBA - Erupción inminente. Evacuación inmediata obligatoria.",
+      ultima_actualizacion: new Date().toISOString(),
+      parametros_id: "test",
+      volcan_id: "test",
+    },
+    parametros: {
+      id: "test",
+      sismos_24h: 285,
+      temperatura_crater: "1,400°C",
+      emision_so2: "8,500 ton/día",
+      deformacion: "15.2 cm/mes",
+      fecha_actualizacion: new Date().toISOString(),
+    },
+    configuracion: {
+      id: "test",
+      nivel: "rojo",
+      color: "bg-red-600",
+      text_color: "text-white",
+      bg_gradient: "from-red-900/30 to-red-900/10",
+      icon_name: "AlertTriangle",
+      label: "EMERGENCIA",
+      descripcion_corta: "Erupción inminente o en curso",
+      urgencia: "crítica",
+      pulse_color: "shadow-red-500/80",
+    },
+    recomendaciones: [
+      {
+        id: "1",
+        nivel: "rojo",
+        recomendacion: "Evacuar inmediatamente la zona de peligro",
+        orden: 1,
+      },
+      {
+        id: "2",
+        nivel: "rojo",
+        recomendacion: "Seguir rutas de evacuación establecidas",
+        orden: 2,
+      },
+      {
+        id: "3",
+        nivel: "rojo",
+        recomendacion: "Mantener comunicación con autoridades",
+        orden: 3,
+      },
+    ],
+    zona_exclusion: {
+      id: "test",
+      nivel_alerta: "rojo",
+      radio_km: 20,
+      descripcion: "Zona de exclusión total de 20 km del volcán",
+    },
+    acciones_requeridas: {
+      id: "test",
+      nivel_alerta: "rojo",
+      evacuar_zona_riesgo: true,
+      activar_red_comunitaria: true,
+      revisar_rutas_evacuacion: true,
+      preparar_kit_emergencia: true,
+    },
+    informacion_volcan: {
+      id: "test",
+      nombre: "Villarrica",
+      codigo: "VIL",
+      altura_msnm: 2847,
+      latitud: -39.42,
+      longitud: -71.93,
+      descripcion: "Volcán activo en la Región de la Araucanía",
+      activo: true,
+    },
+  };
+
+  // Función para reproducir sonido de alerta con repetición
   const playAlertSound = (nivel: "naranja" | "rojo") => {
+    console.log("🎵 Reproduciendo sonido:", nivel);
     if (!soundEnabled) return;
 
     setIsPlayingSound(true);
     createAlertSound(nivel);
 
+    // Limpiar intervalo anterior
+    if (soundInterval) {
+      clearInterval(soundInterval);
+    }
+
+    // Repetir sonido cada cierto tiempo
+    const interval = setInterval(
+      () => {
+        if (showCriticalAlert && !alertDismissed && soundEnabled) {
+          createAlertSound(nivel);
+        } else {
+          clearInterval(interval);
+          setIsPlayingSound(false);
+        }
+      },
+      nivel === "naranja" ? 4000 : 3000
+    );
+
+    setSoundInterval(interval);
+
     setTimeout(
       () => {
-        setIsPlayingSound(false);
+        if (!showCriticalAlert || alertDismissed) {
+          setIsPlayingSound(false);
+        }
       },
-      nivel === "naranja" ? 1200 : 1800
+      nivel === "naranja" ? 1500 : 2000
     );
+  };
+
+  // Función para detener sonido
+  const stopAlertSound = () => {
+    if (soundInterval) {
+      clearInterval(soundInterval);
+      setSoundInterval(null);
+    }
+    setIsPlayingSound(false);
+  };
+
+  // Función para forzar emergencia
+  const forceEmergency = () => {
+    console.log("🚨 FORZANDO EMERGENCIA!");
+    setEmergencyMode(true);
+    setVolcanoData(emergencyData as any);
+    setAlertDismissed(false);
+    setShowCriticalAlert(true);
+
+    setTimeout(() => {
+      playAlertSound("rojo");
+    }, 500);
   };
 
   // Función para cargar datos completos del volcán desde la base de datos
   const cargarDatosVolcan = async () => {
+    console.log("📡 Iniciando carga de datos...");
+
+    if (!supabase) {
+      console.error("❌ Cliente de Supabase no disponible");
+      return null;
+    }
+
     try {
+      console.log("🔍 Consultando alertas...");
       // Cargar alerta actual
       const { data: alerta, error: errorAlerta } = await supabase
         .from("alertas_volcan")
@@ -186,8 +320,10 @@ export default function VolcanoStatusBanner({
         .limit(1)
         .single();
 
+      console.log("📋 Resultado alerta:", { alerta, errorAlerta });
+
       if (errorAlerta || !alerta) {
-        console.error("Error cargando alerta:", errorAlerta);
+        console.error("❌ Error cargando alerta:", errorAlerta);
         return null;
       }
 
@@ -283,7 +419,15 @@ export default function VolcanoStatusBanner({
   const simularCambioNivel = async (
     nuevoNivel: "verde" | "amarillo" | "naranja" | "rojo"
   ) => {
-    if (!volcanoData) return;
+    if (!volcanoData) {
+      console.log("❌ No hay datos del volcán disponibles");
+      return;
+    }
+
+    if (!supabase) {
+      console.log("❌ Cliente de Supabase no disponible");
+      return;
+    }
 
     try {
       // Actualizar parámetros según el nivel
@@ -363,17 +507,30 @@ export default function VolcanoStatusBanner({
         setAlertDismissed(false);
 
         const previousLevel = previousLevelRef.current;
+        console.log("🔄 Simulación completada:", {
+          nuevoNivel,
+          previousLevel,
+          cambioDetectado:
+            (nuevoNivel === "naranja" || nuevoNivel === "rojo") &&
+            previousLevel !== nuevoNivel,
+        });
+
         if (
           (nuevoNivel === "naranja" || nuevoNivel === "rojo") &&
           previousLevel !== nuevoNivel
         ) {
+          console.log("🎵 Reproduciendo sonido por cambio de nivel");
           playAlertSound(nuevoNivel);
         }
 
         previousLevelRef.current = nuevoNivel;
 
         if (nuevoNivel === "naranja" || nuevoNivel === "rojo") {
+          console.log("🚨 Mostrando modal de emergencia");
           setShowCriticalAlert(true);
+        } else {
+          console.log("✅ Cerrando modal (nivel no crítico)");
+          setShowCriticalAlert(false);
         }
       }
     } catch (error) {
@@ -382,48 +539,97 @@ export default function VolcanoStatusBanner({
   };
 
   useEffect(() => {
+    console.log("🚀 useEffect iniciando carga de datos...");
+
     const loadVolcanoData = async () => {
+      console.log("📊 Cargando datos del volcán...");
       const data = await cargarDatosVolcan();
+
       if (data) {
+        console.log("✅ Datos cargados:", {
+          nivel: data.alerta.nivel_alerta,
+          descripcion: data.alerta.descripcion,
+        });
+
         setVolcanoData(data);
         previousLevelRef.current = data.alerta.nivel_alerta;
 
-        if (
-          (data.alerta.nivel_alerta === "naranja" ||
-            data.alerta.nivel_alerta === "rojo") &&
-          !alertDismissed
-        ) {
+        // Verificar si es nivel crítico
+        const esCritico =
+          data.alerta.nivel_alerta === "naranja" ||
+          data.alerta.nivel_alerta === "rojo";
+
+        console.log("🔍 Verificando nivel crítico:", {
+          nivel: data.alerta.nivel_alerta,
+          esCritico,
+          alertDismissed,
+        });
+
+        if (esCritico && !alertDismissed) {
+          console.log(
+            "🚨 NIVEL CRÍTICO DETECTADO! Mostrando modal y reproduciendo sonido"
+          );
           setShowCriticalAlert(true);
+
+          // Reproducir sonido después de un pequeño delay
+          setTimeout(() => {
+            console.log("🎵 Iniciando reproducción de sonido...");
+            playAlertSound(data.alerta.nivel_alerta as "naranja" | "rojo");
+          }, 1000);
+        } else {
+          console.log("ℹ️ Nivel no crítico o alerta ya fue cerrada");
         }
+      } else {
+        console.log("❌ No se pudieron cargar los datos del volcán");
       }
       setLoading(false);
     };
 
     loadVolcanoData();
 
-    // Suscribirse a cambios en tiempo real
-    const subscription = supabase
-      .channel("volcano_status_changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "alertas_volcan" },
-        () => {
-          loadVolcanoData();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "parametros_volcan" },
-        () => {
-          loadVolcanoData();
-        }
-      )
-      .subscribe();
+    // Suscribirse a cambios en tiempo real solo si supabase está disponible
+    let subscription: any = null;
+
+    if (supabase) {
+      subscription = supabase
+        .channel("volcano_status_changes")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "alertas_volcan" },
+          () => {
+            loadVolcanoData();
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "parametros_volcan" },
+          () => {
+            loadVolcanoData();
+          }
+        )
+        .subscribe();
+    }
 
     return () => {
-      subscription.unsubscribe();
+      if (subscription) {
+        subscription.unsubscribe();
+      }
+      stopAlertSound(); // Limpiar sonidos al desmontar
     };
   }, [alertDismissed]);
+
+  // useEffect para manejar modo de emergencia
+  useEffect(() => {
+    if (emergencyMode && volcanoData) {
+      console.log("🚨 Modo emergencia activado - forzando modal");
+      setShowCriticalAlert(true);
+      setAlertDismissed(false);
+
+      setTimeout(() => {
+        playAlertSound("rojo");
+      }, 1000);
+    }
+  }, [emergencyMode, volcanoData]);
 
   if (loading) {
     return (
@@ -712,31 +918,79 @@ export default function VolcanoStatusBanner({
 
         {/* Simulador de niveles de alerta */}
         <div className="max-w-7xl mx-auto px-6 lg:px-8 pb-6">
-          <div className="flex items-center justify-center space-x-3">
+          <div className="flex items-center justify-center space-x-3 mb-4">
             <span className="text-gray-400 text-sm mr-3">Simular nivel:</span>
             <button
-              onClick={() => simularCambioNivel("verde")}
+              onClick={() => {
+                console.log("🟢 Simulando nivel VERDE");
+                simularCambioNivel("verde");
+              }}
               className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
             >
               Verde
             </button>
             <button
-              onClick={() => simularCambioNivel("amarillo")}
+              onClick={() => {
+                console.log("🟡 Simulando nivel AMARILLO");
+                simularCambioNivel("amarillo");
+              }}
               className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-sm rounded-lg transition-colors"
             >
               Amarillo
             </button>
             <button
-              onClick={() => simularCambioNivel("naranja")}
+              onClick={() => {
+                console.log("🟠 Simulando nivel NARANJA");
+                simularCambioNivel("naranja");
+              }}
               className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm rounded-lg transition-colors"
             >
               Naranja 🔊
             </button>
             <button
-              onClick={() => simularCambioNivel("rojo")}
+              onClick={() => {
+                console.log("🔴 Simulando nivel ROJO");
+                simularCambioNivel("rojo");
+              }}
               className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition-colors"
             >
               Rojo 🚨
+            </button>
+          </div>
+
+          {/* Botones de prueba */}
+          <div className="flex items-center justify-center space-x-3">
+            <button
+              onClick={forceEmergency}
+              className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-lg transition-colors shadow-lg animate-pulse"
+            >
+              🚨 ACTIVAR EMERGENCIA AHORA
+            </button>
+            <button
+              onClick={() => {
+                console.log("🧪 Probando modal simple");
+                setAlertDismissed(false);
+                setShowCriticalAlert(true);
+                setTimeout(() => {
+                  createAlertSound("rojo");
+                }, 500);
+              }}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors"
+            >
+              🧪 Modal Simple
+            </button>
+            <button
+              onClick={() => {
+                console.log("🔄 Reseteando todo");
+                setEmergencyMode(false);
+                setAlertDismissed(false);
+                setShowCriticalAlert(false);
+                setIsPlayingSound(false);
+                stopAlertSound();
+              }}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
+            >
+              🔄 Reset Todo
             </button>
           </div>
 
@@ -750,91 +1004,93 @@ export default function VolcanoStatusBanner({
         </div>
       </div>
 
-      {/* Popup de Alerta Crítica */}
-      {showCriticalAlert && !alertDismissed && esCritico && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-          <div className="bg-black rounded-3xl p-8 max-w-md w-full shadow-2xl animate-pulse border border-red-800">
+      {/* Popup de Alerta Crítica - SIMPLIFICADO PARA DEBUG */}
+      {showCriticalAlert && !alertDismissed && volcanoData && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-gradient-to-br from-red-950 to-black rounded-3xl p-8 max-w-lg w-full shadow-2xl border-2 border-red-500 animate-pulse">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center space-x-3">
-                <div
-                  className={`p-3 rounded-full ${configuracion.color} animate-pulse`}
-                >
-                  <AlertCircle
-                    className={`h-6 w-6 ${configuracion.text_color}`}
-                  />
+                <div className="p-4 rounded-full bg-red-600 animate-bounce">
+                  <AlertCircle className="h-8 w-8 text-white" />
                 </div>
-                <h3 className="text-xl font-semibold text-white">
-                  {alerta.nivel_alerta === "rojo"
-                    ? "🚨 EMERGENCIA VOLCÁNICA"
-                    : "⚠️ ALERTA VOLCÁNICA"}
-                </h3>
+                <div>
+                  <h3 className="text-2xl font-bold text-white">
+                    {volcanoData.alerta.nivel_alerta === "rojo"
+                      ? "🚨 EMERGENCIA VOLCÁNICA"
+                      : "⚠️ ALERTA VOLCÁNICA"}
+                  </h3>
+                  <p className="text-red-400 text-sm">
+                    Nivel: {volcanoData.alerta.nivel_alerta.toUpperCase()}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => {
+                  console.log("❌ Cerrando modal de emergencia");
                   setShowCriticalAlert(false);
                   setAlertDismissed(true);
+                  setIsPlayingSound(false);
                 }}
-                className="text-gray-400 hover:text-white"
+                className="text-gray-400 hover:text-white transition-colors p-2 rounded-full hover:bg-gray-800"
               >
-                <X className="h-5 w-5" />
+                <X className="h-6 w-6" />
               </button>
             </div>
 
-            <Alert className={`mb-6 bg-gray-900 border-gray-800 border`}>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertTitle className="text-white">
-                Volcán {informacion_volcan.nombre} - {configuracion.label}
+            <Alert className="mb-6 bg-red-900/30 border-red-600 border-2">
+              <AlertTriangle className="h-5 w-5 text-red-400" />
+              <AlertTitle className="text-white text-lg font-bold">
+                Volcán {volcanoData.informacion_volcan.nombre} -{" "}
+                {volcanoData.configuracion.label}
               </AlertTitle>
-              <AlertDescription className="text-gray-300">
-                {configuracion.descripcion_corta}
+              <AlertDescription className="text-red-200">
+                {volcanoData.configuracion.descripcion_corta}
               </AlertDescription>
             </Alert>
 
-            <div className="space-y-4 mb-8">
-              <p className="text-gray-300">{alerta.descripcion}</p>
+            <div className="space-y-4 mb-6">
+              <p className="text-white text-lg font-medium">
+                {volcanoData.alerta.descripcion}
+              </p>
 
-              {acciones_requeridas.evacuar_zona_riesgo && (
-                <div className="bg-red-900/30 border border-red-800 rounded-xl p-4">
-                  <p className="text-red-400 font-semibold text-sm">
-                    🚨 EVACUACIÓN REQUERIDA: Si te encuentras en zona de riesgo,
-                    evacúa inmediatamente.
-                  </p>
-                </div>
-              )}
+              <div className="bg-red-900/50 border border-red-500 rounded-xl p-4">
+                <p className="text-red-300 font-bold">
+                  � Sonido activo: {isPlayingSound ? "SÍ" : "NO"}
+                </p>
+                <p className="text-red-300">
+                  Estado modal: {showCriticalAlert ? "VISIBLE" : "OCULTA"}
+                </p>
+              </div>
             </div>
 
             <div className="space-y-3">
-              {acciones_requeridas.activar_red_comunitaria && (
-                <Button
-                  onClick={() => {
-                    onOpenCommunity?.();
-                    setShowCriticalAlert(false);
-                    setAlertDismissed(true);
-                  }}
-                  className="w-full bg-gray-800 hover:bg-gray-700 text-white rounded-xl border border-gray-700"
-                  size="lg"
-                >
-                  <Users className="h-4 w-4 mr-2" />
-                  Activar Red Comunitaria
-                </Button>
-              )}
+              <Button
+                onClick={() => {
+                  console.log("🎵 Reproduciendo sonido manualmente");
+                  createAlertSound(
+                    volcanoData.alerta.nivel_alerta as "naranja" | "rojo"
+                  );
+                }}
+                className="w-full bg-red-600 hover:bg-red-700 text-white rounded-xl"
+                size="lg"
+              >
+                🔊 Reproducir Sonido Ahora
+              </Button>
 
               <Button
                 onClick={() => {
+                  console.log("✅ Cerrando modal - Entendido");
                   setShowCriticalAlert(false);
                   setAlertDismissed(true);
+                  setIsPlayingSound(false);
                 }}
                 variant="outline"
-                className="w-full border-gray-700 text-gray-300 hover:bg-gray-800 rounded-xl"
+                className="w-full border-gray-500 text-white hover:bg-gray-800 rounded-xl bg-gray-900/50"
                 size="lg"
               >
                 Entendido
               </Button>
             </div>
-
-            <p className="text-xs text-gray-500 mt-6 text-center">
-              Mantente informado y sigue las instrucciones de las autoridades
-            </p>
           </div>
         </div>
       )}

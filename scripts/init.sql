@@ -99,23 +99,6 @@ CREATE TABLE puntos_encuentro (
     ocupado BOOLEAN DEFAULT FALSE
 );
 
--- Crear tabla de rutas de evacuación
-CREATE TABLE rutas_evacuacion (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    nombre_ruta VARCHAR(255) NOT NULL,
-    descripcion TEXT,
-    coordenadas_geojson JSONB NOT NULL
-);
-
--- Crear tabla para ubicaciones simuladas (para el demo)
-CREATE TABLE ubicaciones_simuladas (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    nombre VARCHAR(255) NOT NULL,
-    latitud DECIMAL(10, 8) NOT NULL,
-    longitud DECIMAL(11, 8) NOT NULL,
-    descripcion TEXT
-);
-
 -- Crear tabla de avisos de la comunidad
 CREATE TABLE avisos_comunidad (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -357,13 +340,13 @@ INSERT INTO configuraciones_nivel (nivel, color, text_color, bg_gradient, icon_n
 ('naranja', 'bg-orange-600', 'text-white', 'from-orange-900/30 to-orange-900/10', 'TrendingUp', 'ALERTA', 'Actividad volcánica alta', 'alta', 'shadow-orange-500/70'),
 ('rojo', 'bg-red-600', 'text-white', 'from-red-900/30 to-red-900/10', 'AlertTriangle', 'EMERGENCIA', 'Erupción inminente o en curso', 'crítica', 'shadow-red-500/80');
 
--- Insertar parámetros actuales del volcán
+-- Insertar parámetros actuales del volcán (NIVEL CRÍTICO PARA PRUEBAS)
 INSERT INTO parametros_volcan (sismos_24h, temperatura_crater, emision_so2, deformacion) VALUES
-(45, '850°C', '1,200 ton/día', '2.3 cm/mes');
+(285, '1,400°C', '8,500 ton/día', '15.2 cm/mes');
 
--- Insertar alerta actual del volcán
+-- Insertar alerta actual del volcán (NIVEL CRÍTICO PARA PRUEBAS)
 INSERT INTO alertas_volcan (nivel_alerta, descripcion, parametros_id, volcan_id) VALUES
-('amarillo', 'Actividad volcánica moderada. Se registra actividad sísmica constante y emisiones de gases. Temperatura del cráter en aumento. Monitoreo continuo activo.',
+('rojo', 'EMERGENCIA VOLCÁNICA - Erupción inminente. ERUPCIÓN INMINENTE O EN CURSO. Evacuación inmediata obligatoria. Actividad sísmica extrema y emisiones masivas de gases.',
 (SELECT id FROM parametros_volcan LIMIT 1),
 (SELECT id FROM informacion_volcan LIMIT 1));
 

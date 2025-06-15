@@ -10,7 +10,7 @@ import { Mountain, Phone, ArrowRight } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
 export default function LoginScreen() {
-  const [telefono, setTelefono] = useState("+56 9 "); // Número por defecto
+  const [telefono, setTelefono] = useState("+56 9 "); // Siempre incluir el 9
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const { login } = useAuth();
@@ -27,15 +27,54 @@ export default function LoginScreen() {
       return;
     }
 
-    // Verificar que el número esté completo (+56 9 XXXX XXXX = 17 caracteres)
-    if (telefono.length < 17) {
-      setError("El número debe tener 8 dígitos después del 9");
+    // Verificar que el número tenga el formato básico chileno móvil (+56 9...)
+    // Ser permisivo con espacios pero exigir el 9
+    const numeroLimpio = telefono.replace(/\s/g, ""); // Remover espacios
+
+    console.log("🔍 Debug validación teléfono (con 9 obligatorio):", {
+      telefonoOriginal: telefono,
+      telefonoLongitud: telefono.length,
+      numeroLimpio: numeroLimpio,
+      numeroLimpioLongitud: numeroLimpio.length,
+    });
+
+    // Validación básica: debe empezar con +569 (formato móvil chileno)
+    if (!numeroLimpio.startsWith("+569")) {
+      console.log("❌ No empieza con +569 (móvil chileno)");
+      setError("Debe ser un número móvil chileno (+56 9...)");
       phoneInput.setCustomValidity(
-        "El número debe tener 8 dígitos después del 9"
+        "Debe ser un número móvil chileno (+56 9...)"
       );
       phoneInput.reportValidity();
       return;
     }
+
+    // Debe tener al menos 10 caracteres (+569 + algunos dígitos)
+    if (numeroLimpio.length < 10) {
+      console.log("❌ Número muy corto:", numeroLimpio.length, "< 10");
+      setError("El número es muy corto");
+      phoneInput.setCustomValidity("El número es muy corto");
+      phoneInput.reportValidity();
+      return;
+    }
+
+    // Validación permisiva: +56 9 seguido de números
+    const formatoMovil = /^\+56\s?9\s?[\d\s]+$/.test(telefono);
+    console.log("🔍 Validación móvil chileno:", {
+      telefono: telefono,
+      regex: "^\\+56\\s?9\\s?[\\d\\s]+$",
+      valido: formatoMovil,
+    });
+
+    if (!formatoMovil) {
+      console.log("❌ Formato móvil inválido");
+      setError("Formato inválido. Use +56 9 seguido de números");
+      phoneInput.setCustomValidity("Formato inválido");
+      phoneInput.reportValidity();
+      return;
+    }
+
+    console.log("✅ Validación de teléfono exitosa");
 
     setLoading(true);
     setError("");
@@ -52,62 +91,84 @@ export default function LoginScreen() {
 
     setLoading(false);
   };
-
   const formatTelefono = (value: string) => {
-    // Remover todos los caracteres no numéricos excepto +
-    const cleaned = value.replace(/[^\d+]/g, "");
+    console.log("🔧 formatTelefono - Input:", value, "Longitud:", value.length);
 
-    // Si está vacío, usar el valor por defecto
-    if (!cleaned || cleaned === "+") {
+    // Si el usuario está borrando, ser muy permisivo
+    if (value.length < telefono.length) {
+      // Solo intervenir si borra demasiado (hasta el prefijo base)
+      if (value.length <= 4 || !value.startsWith("+56")) {
+        return "+56 9 ";
+      }
+
+      return value; // Permitir edición libre
+    }
+
+    // Si es el mismo valor, no hacer nada (evita loops)
+    if (value === telefono) {
+      return value;
+    }
+
+    console.log("🔧 Procesando nuevo input...");
+
+    // Solo formatear cuando el usuario está agregando contenido
+    // Limpiar caracteres no válidos pero conservar estructura
+    let cleaned = value.replace(/[^\d+\s]/g, "");
+    console.log("🔧 Cleaned:", cleaned);
+
+    // Si está completamente vacío, dar el formato base
+    if (!cleaned || cleaned === "+" || cleaned === "+5" || cleaned === "+56") {
       return "+56 9 ";
     }
 
-    // Si no empieza con +56, agregarlo automáticamente
-    let formatted = cleaned;
-    if (!formatted.startsWith("+56")) {
-      if (formatted.startsWith("56")) {
-        formatted = "+" + formatted;
-      } else if (formatted.startsWith("9")) {
-        formatted = "+56" + formatted;
-      } else if (formatted.startsWith("+")) {
-        formatted = "+56" + formatted.slice(1);
-      } else {
-        formatted = "+569" + formatted;
+    // Si no empieza con +56, corregir automáticamente solo casos obvios
+    if (!cleaned.startsWith("+56")) {
+      if (/^\d/.test(cleaned)) {
+        // Si empieza con dígitos, asumir que van después del +56 9
+        cleaned = "+56 9 " + cleaned;
+      } else if (cleaned.startsWith("+")) {
+        cleaned = "+56 9 " + cleaned.slice(1);
       }
     }
 
-    // Extraer las partes del número
-    let phoneBody = formatted.replace("+56", "");
-
-    // Asegurar que empiece con 9 (números móviles en Chile)
-    if (!phoneBody.startsWith("9")) {
-      phoneBody = "9" + phoneBody.replace(/^9*/, "");
+    // Asegurar formato básico pero sin ser muy agresivo
+    if (cleaned.startsWith("+56") && !cleaned.includes("9")) {
+      // Si tiene +56 pero no tiene 9, agregarlo
+      const afterCode = cleaned.substring(3).trim();
+      cleaned = "+56 9 " + afterCode;
     }
 
-    // Limitar a máximo 9 dígitos (9 + 8 dígitos)
-    phoneBody = phoneBody.slice(0, 9);
+    console.log("🔧 Cleaned final:", cleaned);
 
-    // Solo números que empiecen con 9 seguidos de 8 dígitos
-    const digitsAfter9 = phoneBody.slice(1);
-    if (digitsAfter9.length > 8) {
-      phoneBody = "9" + digitsAfter9.slice(0, 8);
-    }
+    // Aplicar formato de espacios suavemente
+    if (cleaned.startsWith("+56")) {
+      // Extraer solo los dígitos después de +56
+      const numerosPuros = cleaned
+        .replace(/^\+56\s?9?\s?/, "")
+        .replace(/\s/g, "");
+      console.log("🔧 Números puros extraídos:", numerosPuros);
 
-    // Formatear con espacios: +56 9 XXXX XXXX
-    let result = "+56";
-    if (phoneBody.length > 0) {
-      result += " " + phoneBody[0]; // El 9
-      if (phoneBody.length > 1) {
-        const remaining = phoneBody.slice(1);
-        if (remaining.length <= 4) {
-          result += " " + remaining;
-        } else {
-          result += " " + remaining.slice(0, 4) + " " + remaining.slice(4, 8);
+      // Construir el formato correcto
+      let result = "+56 9";
+
+      if (numerosPuros.length > 0) {
+        // Primeros 4 dígitos
+        const grupo1 = numerosPuros.slice(0, 4);
+        result += " " + grupo1;
+
+        // Siguientes 4 dígitos
+        if (numerosPuros.length > 4) {
+          const grupo2 = numerosPuros.slice(4, 8);
+          result += " " + grupo2;
         }
       }
+
+      console.log("🔧 Resultado final:", result, "Longitud:", result.length);
+      return result;
     }
 
-    return result;
+    console.log("🔧 Sin cambios, devolviendo:", cleaned);
+    return cleaned;
   };
 
   const handleDirectAccess = async () => {
@@ -170,36 +231,72 @@ export default function LoginScreen() {
                     placeholder="+56 9 1234 5678"
                     value={telefono}
                     onChange={(e) => {
-                      const formatted = formatTelefono(e.target.value);
-                      setTelefono(formatted);
+                      const newValue = e.target.value;
+                      console.log(
+                        "📝 onChange - Input recibido:",
+                        newValue,
+                        "Longitud:",
+                        newValue.length
+                      );
+                      console.log(
+                        "📝 Estado actual:",
+                        telefono,
+                        "Longitud:",
+                        telefono.length
+                      );
+
+                      const formatted = formatTelefono(newValue);
+                      console.log(
+                        "📝 Después de formatear:",
+                        formatted,
+                        "Longitud:",
+                        formatted.length
+                      );
+
+                      // Solo actualizar si realmente cambió
+                      if (formatted !== telefono) {
+                        console.log("📝 Actualizando estado...");
+                        setTelefono(formatted);
+                      } else {
+                        console.log("📝 Sin cambios en el estado");
+                      }
+
                       // Limpiar validación personalizada cuando el usuario escribe
                       const input = e.target as HTMLInputElement;
                       input.setCustomValidity("");
                     }}
                     onFocus={() => {
-                      // Si el campo está vacío o solo tiene el prefijo, asegurar que tenga el formato base
-                      if (telefono.length <= 6) {
+                      // Solo intervenir si el campo está completamente vacío
+                      if (!telefono || telefono.length <= 3) {
                         setTelefono("+56 9 ");
                       }
                     }}
                     onBlur={() => {
-                      // Si el usuario sale del campo y solo tiene el prefijo, mantenerlo
-                      if (telefono === "+56 9 " || telefono.length < 8) {
+                      // Solo intervenir si el campo está vacío o muy incompleto
+                      if (!telefono || telefono.length <= 6) {
                         setTelefono("+56 9 ");
                       }
                     }}
                     className="pl-10 bg-gray-800 border-gray-700 text-white placeholder-gray-500 h-12 text-lg"
                     disabled={loading}
                     required
-                    pattern="^\+56 9 \d{4} \d{4}$"
-                    title="Ingresa un número chileno válido: +56 9 XXXX XXXX"
-                    maxLength={17}
-                    minLength={17}
+                    pattern="^\+56\s?9\s?[\d\s]+$"
+                    title="Ingresa un número móvil chileno: +56 9 seguido de números"
+                    maxLength={20}
+                    minLength={10}
                     autoComplete="tel"
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Formato: +56 9 XXXX XXXX (8 dígitos después del 9)
+                  Formato: +56 9 XXXX XXXX (móvil chileno)
+                  <br />
+                  <span className="text-blue-400">
+                    Actual: &quot;{telefono}&quot; ({telefono.length} chars)
+                  </span>
+                  <br />
+                  <span className="text-green-400 text-xs">
+                    💡 El 9 se agrega automáticamente
+                  </span>
                 </p>
               </div>
 

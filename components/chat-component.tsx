@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import { MessageCircle, Send, User, ArrowLeft } from "lucide-react";
+import {
+  MessageCircle,
+  Send,
+  User,
+  ArrowLeft,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import { supabase, type Usuario, type MensajeChat } from "@/lib/supabase";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -16,10 +23,25 @@ export default function ChatComponent() {
   const [nuevoMensaje, setNuevoMensaje] = useState("");
   const [loading, setLoading] = useState(true);
   const [enviando, setEnviando] = useState(false);
+  const [conectado, setConectado] = useState(true); // Estado de conexión
   const { usuario } = useAuth();
+  const mensajesEndRef = useRef<HTMLDivElement>(null); // Para auto-scroll
+
+  // Solicitar permisos de notificación al montar el componente
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission().then((permission) => {
+          console.log("📢 Permisos de notificación:", permission);
+        });
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const cargarUsuarios = async () => {
+      if (!supabase) return;
+
       try {
         const { data, error } = await supabase
           .from("usuarios")
@@ -45,73 +67,162 @@ export default function ChatComponent() {
     }
   }, [usuario]);
 
-  const cargarMensajes = async () => {
-    if (!usuarioSeleccionado || !usuario) return;
-
-    try {
-      const { data, error } = await supabase
-        .from("mensajes_chat")
-        .select(
-          `
-          *,
-          emisor:emisor_id (
-            id,
-            nombre
-          ),
-          receptor:receptor_id (
-            id,
-            nombre
-          )
-        `
-        )
-        .or(
-          `and(emisor_id.eq.${usuario.id},receptor_id.eq.${usuarioSeleccionado.id}),and(emisor_id.eq.${usuarioSeleccionado.id},receptor_id.eq.${usuario.id})`
-        )
-        .order("fecha_envio", { ascending: true });
-
-      if (error) {
-        console.error("Error cargando mensajes:", error);
-        return;
-      }
-
-      setMensajes(data || []);
-    } catch (error) {
-      console.error("Error:", error);
-    }
-  };
-
   useEffect(() => {
-    if (!usuarioSeleccionado || !usuario) return;
+    if (!usuarioSeleccionado || !usuario || !supabase) return;
+
+    const cargarMensajes = async () => {
+      if (!supabase) return;
+
+      try {
+        const { data, error } = await supabase
+          .from("mensajes_chat")
+          .select(
+            `
+            *,
+            emisor:emisor_id (
+              id,
+              nombre
+            ),
+            receptor:receptor_id (
+              id,
+              nombre
+            )
+          `
+          )
+          .or(
+            `and(emisor_id.eq.${usuario.id},receptor_id.eq.${usuarioSeleccionado.id}),and(emisor_id.eq.${usuarioSeleccionado.id},receptor_id.eq.${usuario.id})`
+          )
+          .order("fecha_envio", { ascending: true });
+
+        if (error) {
+          console.error("Error cargando mensajes:", error);
+          return;
+        }
+
+        setMensajes(data || []);
+      } catch (error) {
+        console.error("Error:", error);
+      }
+    };
 
     cargarMensajes();
 
-    // Suscribirse a nuevos mensajes
+    // Suscribirse a nuevos mensajes en tiempo real
+    console.log("🔄 Configurando suscripción en tiempo real para mensajes...");
+
     const subscription = supabase
-      .channel("mensajes_chat_changes")
+      .channel(`mensajes_chat_${usuario.id}_${usuarioSeleccionado.id}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "mensajes_chat" },
-        (payload) => {
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "mensajes_chat",
+          filter: `or(and(emisor_id.eq.${usuario.id},receptor_id.eq.${usuarioSeleccionado.id}),and(emisor_id.eq.${usuarioSeleccionado.id},receptor_id.eq.${usuario.id}))`,
+        },
+        async (payload) => {
+          console.log("📨 Nuevo mensaje recibido en tiempo real:", payload);
+
           const nuevoMensaje = payload.new as MensajeChat;
+
+          // Verificar que el mensaje es para esta conversación
           if (
             (nuevoMensaje.emisor_id === usuario.id &&
               nuevoMensaje.receptor_id === usuarioSeleccionado.id) ||
             (nuevoMensaje.emisor_id === usuarioSeleccionado.id &&
               nuevoMensaje.receptor_id === usuario.id)
           ) {
-            cargarMensajes();
+            // Obtener los datos completos del mensaje con los usuarios
+            try {
+              if (!supabase) return;
+
+              const { data: mensajeCompleto, error } = await supabase
+                .from("mensajes_chat")
+                .select(
+                  `
+                  *,
+                  emisor:emisor_id (
+                    id,
+                    nombre
+                  ),
+                  receptor:receptor_id (
+                    id,
+                    nombre
+                  )
+                `
+                )
+                .eq("id", nuevoMensaje.id)
+                .single();
+
+              if (!error && mensajeCompleto) {
+                console.log(
+                  "✅ Añadiendo mensaje en tiempo real:",
+                  mensajeCompleto
+                );
+
+                // Agregar el mensaje solo si no existe ya (evitar duplicados)
+                setMensajes((prev) => {
+                  const existe = prev.some((m) => m.id === mensajeCompleto.id);
+                  if (existe) {
+                    console.log("⚠️ Mensaje ya existe, evitando duplicado");
+                    return prev;
+                  }
+
+                  // Notificación si es mensaje de otro usuario y la ventana no está enfocada
+                  if (
+                    mensajeCompleto.emisor_id !== usuario.id &&
+                    !document.hasFocus()
+                  ) {
+                    // Crear notificación nativa del browser
+                    if (Notification.permission === "granted") {
+                      new Notification(
+                        `Nuevo mensaje de ${mensajeCompleto.emisor?.nombre}`,
+                        {
+                          body: mensajeCompleto.mensaje,
+                          icon: "/volcano-icon.png", // Puedes añadir un icono
+                        }
+                      );
+                    }
+                  }
+
+                  return [...prev, mensajeCompleto];
+                });
+              }
+            } catch (error) {
+              console.error("❌ Error obteniendo mensaje completo:", error);
+            }
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log("📡 Estado de suscripción:", status);
+
+        // Actualizar estado de conexión basado en el status
+        if (status === "SUBSCRIBED") {
+          setConectado(true);
+          console.log("🟢 Conectado en tiempo real");
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setConectado(false);
+          console.log("🔴 Error de conexión en tiempo real");
+        }
+      });
 
     return () => {
+      console.log("🔌 Desconectando suscripción en tiempo real");
       subscription.unsubscribe();
     };
   }, [usuarioSeleccionado, usuario]);
 
+  // Auto-scroll cuando lleguen nuevos mensajes
+  useEffect(() => {
+    if (mensajesEndRef.current) {
+      mensajesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [mensajes]);
+
   const enviarMensaje = async () => {
-    if (!nuevoMensaje.trim() || !usuario || !usuarioSeleccionado) return;
+    if (!nuevoMensaje.trim() || !usuario || !usuarioSeleccionado || !supabase)
+      return;
 
     const mensajeTexto = nuevoMensaje.trim();
     setNuevoMensaje(""); // Limpiar inmediatamente para mejor UX
@@ -231,10 +342,23 @@ export default function ChatComponent() {
           </span>
         </div>
         <div>
-          <h3 className="text-white font-medium">
-            {usuarioSeleccionado.nombre}
-          </h3>
-          <p className="text-gray-400 text-sm">Chat privado</p>
+          <div className="flex items-center gap-2">
+            <h3 className="text-white font-medium">
+              {usuarioSeleccionado.nombre}
+            </h3>
+            {conectado ? (
+              <span title="Conectado en tiempo real">
+                <Wifi className="h-4 w-4 text-green-500" />
+              </span>
+            ) : (
+              <span title="Sin conexión en tiempo real">
+                <WifiOff className="h-4 w-4 text-red-500" />
+              </span>
+            )}
+          </div>
+          <p className="text-gray-400 text-sm">
+            {conectado ? "En tiempo real" : "Sin conexión"} • Chat privado
+          </p>
         </div>
       </div>
 
@@ -278,6 +402,8 @@ export default function ChatComponent() {
                     </div>
                   );
                 })}
+                {/* Referencia para el auto-scroll */}
+                <div ref={mensajesEndRef} />
               </div>
             )}
           </div>

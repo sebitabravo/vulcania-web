@@ -13,6 +13,9 @@ import {
   X,
   MapPin,
   Users,
+  MessageCircle,
+  Trash2,
+  Clock,
 } from "lucide-react";
 import { supabase, type PuntoEncuentro } from "@/lib/supabase";
 
@@ -60,6 +63,8 @@ export default function AdminPanel({
   const [loading, setLoading] = useState(false);
   const [puntosEncuentro, setPuntosEncuentro] = useState<PuntoEncuentro[]>([]);
   const [loadingPuntos, setLoadingPuntos] = useState(false);
+  const [mensajesComunidad, setMensajesComunidad] = useState<any[]>([]);
+  const [loadingMensajes, setLoadingMensajes] = useState(false);
   const [parametros, setParametros] = useState({
     sismos_24h: 45,
     temperatura_crater: "850°C",
@@ -70,9 +75,12 @@ export default function AdminPanel({
   useEffect(() => {
     cargarNivelActual();
     cargarPuntosEncuentro();
+    cargarMensajesComunidad();
   }, []);
 
   const cargarNivelActual = async () => {
+    if (!supabase) return;
+
     try {
       const { data, error } = await supabase
         .from("alertas_volcan")
@@ -90,6 +98,8 @@ export default function AdminPanel({
   };
 
   const cargarPuntosEncuentro = async () => {
+    if (!supabase) return;
+
     try {
       const { data, error } = await supabase
         .from("puntos_encuentro")
@@ -104,7 +114,82 @@ export default function AdminPanel({
     }
   };
 
+  const cargarMensajesComunidad = async () => {
+    if (!supabase) return;
+
+    try {
+      const { data, error } = await supabase
+        .from("avisos_comunidad")
+        .select(
+          `
+          *,
+          usuarios (
+            id,
+            nombre,
+            telefono
+          )
+        `
+        )
+        .eq("estado", "activo")
+        .order("fecha_creacion", { ascending: false })
+        .limit(10);
+
+      if (data && !error) {
+        setMensajesComunidad(data);
+      }
+    } catch (error) {
+      console.error("Error cargando mensajes de la comunidad:", error);
+    }
+  };
+
+  const eliminarMensaje = async (mensajeId: string) => {
+    if (!supabase) return;
+
+    const confirmar = window.confirm(
+      "¿Estás seguro de que quieres eliminar este mensaje?"
+    );
+    if (!confirmar) return;
+
+    setLoadingMensajes(true);
+    try {
+      const { error } = await supabase
+        .from("avisos_comunidad")
+        .update({ estado: "inactivo" }) // Cambiar a 'inactivo' temporalmente
+        .eq("id", mensajeId);
+
+      if (error) {
+        console.error("Error eliminando mensaje:", error);
+        alert("Error al eliminar el mensaje");
+        return;
+      }
+
+      // Recargar mensajes
+      await cargarMensajesComunidad();
+      console.log("✅ Mensaje eliminado correctamente");
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Error al eliminar el mensaje");
+    } finally {
+      setLoadingMensajes(false);
+    }
+  };
+
+  const calcularTiempoTranscurrido = (fechaISO: string) => {
+    const ahora = new Date();
+    const fecha = new Date(fechaISO);
+    const diferencia = ahora.getTime() - fecha.getTime();
+    const minutos = Math.floor(diferencia / (1000 * 60));
+    const horas = Math.floor(minutos / 60);
+    const dias = Math.floor(horas / 24);
+
+    if (dias > 0) return `${dias}d`;
+    if (horas > 0) return `${horas}h`;
+    return `${minutos}m`;
+  };
+
   const cambiarEstadoPunto = async (puntoId: string, nuevoEstado: boolean) => {
+    if (!supabase) return;
+
     if (!puntoId) {
       console.error("ID de punto no válido");
       return;
@@ -133,6 +218,8 @@ export default function AdminPanel({
   };
 
   const resetearTodosPuntos = async () => {
+    if (!supabase) return;
+
     setLoadingPuntos(true);
     try {
       // Actualizar todos los puntos a ocupado = false
@@ -156,6 +243,8 @@ export default function AdminPanel({
   };
 
   const cambiarNivelAlerta = async (nuevoNivel: string) => {
+    if (!supabase) return;
+
     setLoading(true);
     try {
       // Generar parámetros simulados según el nivel
@@ -437,6 +526,77 @@ export default function AdminPanel({
             </CardContent>
           </Card>
 
+          {/* Gestión de Mensajes de la Comunidad */}
+          <Card className="bg-gray-800 border-gray-700">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center justify-between">
+                <div className="flex items-center">
+                  <MessageCircle className="h-5 w-5 mr-2 text-green-500" />
+                  Gestión de Mensajes de la Comunidad
+                </div>
+                <Badge
+                  variant="outline"
+                  className="border-green-800 text-green-400 bg-green-900/20"
+                >
+                  {mensajesComunidad.length} mensajes
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3 max-h-60 overflow-y-auto">
+                {mensajesComunidad.length === 0 ? (
+                  <p className="text-gray-400 text-center py-4">
+                    No hay mensajes recientes
+                  </p>
+                ) : (
+                  mensajesComunidad.map((mensaje) => (
+                    <div
+                      key={mensaje.id}
+                      className="bg-gray-900 border border-gray-700 rounded-lg p-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="text-sm font-medium text-white">
+                              {mensaje.usuarios?.nombre || "Usuario"}
+                            </span>
+                            <span className="text-xs text-gray-500 flex items-center">
+                              <Clock className="h-3 w-3 mr-1" />
+                              {calcularTiempoTranscurrido(
+                                mensaje.fecha_creacion
+                              )}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-300 leading-relaxed">
+                            {mensaje.mensaje}
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => eliminarMensaje(mensaje.id)}
+                          disabled={loadingMensajes}
+                          size="sm"
+                          variant="outline"
+                          className="ml-3 border-red-800 text-red-400 hover:bg-red-900/20 hover:border-red-700"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {loadingMensajes && (
+                <div className="text-center mt-4">
+                  <div className="w-5 h-5 border-2 border-green-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Actualizando mensajes...
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="bg-blue-900/20 border border-blue-800 rounded-lg p-4">
             <h4 className="text-blue-400 font-medium mb-2">
               💡 Instrucciones:
@@ -448,6 +608,10 @@ export default function AdminPanel({
               </li>
               <li>• Marca puntos como "Lleno" cuando alcancen su capacidad</li>
               <li>• Los puntos llenos aparecerán en rojo en el mapa</li>
+              <li>
+                • Usa el botón <Trash2 className="h-3 w-3 inline mx-1" /> para
+                eliminar mensajes inapropiados
+              </li>
               <li>
                 • Los cambios se reflejan inmediatamente en toda la aplicación
               </li>

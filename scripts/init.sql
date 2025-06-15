@@ -105,7 +105,7 @@ CREATE TABLE avisos_comunidad (
     usuario_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
     mensaje TEXT NOT NULL,
     fecha_creacion TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    estado VARCHAR(20) DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo'))
+    estado VARCHAR(20) DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo', 'eliminado'))
 );
 
 -- Crear tabla de mensajes de chat

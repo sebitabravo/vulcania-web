@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, AlertCircle, X, Volume2, VolumeX } from "lucide-react";
+import { AlertTriangle, AlertCircle, X, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase } from "@/lib/supabase";
@@ -66,47 +66,46 @@ const createAlertSound = (type: "naranja" | "rojo") => {
 export default function EmergencyModal() {
   const [showModal, setShowModal] = useState(false);
   const [alertDismissed, setAlertDismissed] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [isPlayingSound, setIsPlayingSound] = useState(false);
+  // ELIMINAMOS soundEnabled e isPlayingSound - el sonido SIEMPRE debe sonar
   const [currentAlert, setCurrentAlert] = useState<any>(null);
   const [lastAlertId, setLastAlertId] = useState<string | null>(null);
   const [soundInterval, setSoundInterval] = useState<NodeJS.Timeout | null>(
     null
   );
 
-  // Función para detener sonido
+  // Función para detener sonido (solo cuando se cierra la modal)
   const stopAlertSound = () => {
+    console.log("🔇 Deteniendo sonido de alerta");
     if (soundInterval) {
       clearInterval(soundInterval);
       setSoundInterval(null);
     }
-    setIsPlayingSound(false);
   };
 
-  // Función para reproducir sonido con repetición
+  // Función para reproducir sonido OBLIGATORIO y continuo
   const playAlertSound = (nivel: "naranja" | "rojo") => {
-    console.log("🎵 Reproduciendo sonido:", nivel);
-    if (!soundEnabled) return;
+    console.log("🎵 Iniciando sonido PERSISTENTE:", nivel);
 
-    setIsPlayingSound(true);
+    // Reproducir sonido inmediatamente
     createAlertSound(nivel);
 
-    // Limpiar intervalo anterior
+    // Limpiar intervalo anterior si existe
     if (soundInterval) {
       clearInterval(soundInterval);
     }
 
-    // Repetir sonido cada cierto tiempo
+    // Repetir sonido indefinidamente hasta que se cierre la modal
     const interval = setInterval(
       () => {
-        if (showModal && !alertDismissed && soundEnabled) {
+        if (showModal && !alertDismissed) {
+          console.log("🔄 Continuando sonido de emergencia...");
           createAlertSound(nivel);
         } else {
+          console.log("🔇 Deteniendo sonido - modal cerrada");
           clearInterval(interval);
-          setIsPlayingSound(false);
         }
       },
-      nivel === "naranja" ? 4000 : 3000
+      nivel === "naranja" ? 4000 : 3000 // Más frecuente para rojo
     );
 
     setSoundInterval(interval);
@@ -250,10 +249,8 @@ export default function EmergencyModal() {
       {/* Modal de Emergencia */}
       <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
         <div className="bg-gradient-to-br from-red-950 to-black rounded-3xl p-8 max-w-lg w-full shadow-2xl border-2 border-red-500 animate-pulse">
-          {/* Barra de estado sonoro */}
-          {isPlayingSound && (
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 via-orange-500 to-red-500 animate-pulse rounded-t-3xl"></div>
-          )}
+          {/* Barra de estado sonoro - SIEMPRE activa en emergencia */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 via-orange-500 to-red-500 animate-pulse rounded-t-3xl"></div>
 
           <div className="relative">
             <div className="flex items-center justify-between mb-6">
@@ -270,11 +267,9 @@ export default function EmergencyModal() {
                   <p className="text-red-400 text-sm">
                     Nivel: {currentAlert.nivel_alerta.toUpperCase()}
                   </p>
-                  {isPlayingSound && (
-                    <p className="text-red-400 text-sm animate-pulse font-semibold">
-                      🔊 ALERTA SONORA ACTIVA
-                    </p>
-                  )}
+                  <p className="text-red-400 text-sm animate-pulse font-semibold">
+                    🔊 ALERTA SONORA CONTINUA
+                  </p>
                 </div>
               </div>
               <button
@@ -312,36 +307,15 @@ export default function EmergencyModal() {
             </div>
 
             <div className="space-y-3">
-              {/* Control de sonido */}
-              <div className="flex items-center justify-center space-x-4 p-4 bg-gray-900/50 rounded-xl border border-gray-700">
-                <button
-                  onClick={() => {
-                    if (isPlayingSound) {
-                      stopAlertSound();
-                    } else {
-                      playAlertSound(
-                        currentAlert.nivel_alerta as "naranja" | "rojo"
-                      );
-                    }
-                  }}
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                    isPlayingSound
-                      ? "bg-red-600 hover:bg-red-700 text-white"
-                      : "bg-gray-700 hover:bg-gray-600 text-gray-300"
-                  }`}
-                >
-                  {isPlayingSound ? (
-                    <>
-                      <VolumeX className="h-4 w-4" />
-                      <span>Silenciar Alerta</span>
-                    </>
-                  ) : (
-                    <>
-                      <Volume2 className="h-4 w-4" />
-                      <span>Reactivar Sonido</span>
-                    </>
-                  )}
-                </button>
+              {/* Información sobre el sonido continuo */}
+              <div className="flex items-center justify-center space-x-4 p-4 bg-red-900/50 rounded-xl border border-red-500">
+                <div className="flex items-center space-x-2 text-red-300">
+                  <Volume2 className="h-4 w-4 animate-pulse" />
+                  <span className="text-sm font-medium">
+                    🔊 La alerta sonora continuará hasta que cierres esta
+                    ventana
+                  </span>
+                </div>
               </div>
 
               <Button

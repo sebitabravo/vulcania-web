@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { supabase, type AlertaVolcan } from "@/lib/supabase";
+import { APP_CONFIG } from "@/lib/app-config";
+import { DEMO_ALERTA } from "@/lib/demo-data";
 
 const getNivelConfig = (nivel: string) => {
   switch (nivel) {
@@ -76,7 +78,11 @@ export default function VolcanoStatusHeader() {
   useEffect(() => {
     const cargarAlerta = async () => {
       if (!supabase) {
-        console.error("❌ Supabase no está configurado");
+        if (APP_CONFIG.demoMode) {
+          setAlerta(DEMO_ALERTA);
+        } else {
+          console.error("❌ Supabase no está configurado");
+        }
         setLoading(false);
         return;
       }

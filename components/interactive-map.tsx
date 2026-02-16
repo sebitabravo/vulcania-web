@@ -7,6 +7,8 @@ import { MapPin, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { supabase, type PuntoEncuentro } from "@/lib/supabase";
+import { APP_CONFIG } from "@/lib/app-config";
+import { DEMO_PUNTOS_ENCUENTRO } from "@/lib/demo-data";
 
 // Componente que solo se renderiza en el cliente
 function InteractiveMapClient() {
@@ -100,6 +102,11 @@ function InteractiveMapClient() {
       try {
         // Verificar que Supabase esté configurado
         if (!supabase) {
+          if (APP_CONFIG.demoMode) {
+            setPuntosEncuentro(DEMO_PUNTOS_ENCUENTRO);
+            return;
+          }
+
           console.error("❌ Supabase no está configurado");
           console.log("🔍 Variables de entorno disponibles:", {
             hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,

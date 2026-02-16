@@ -11,6 +11,8 @@ import {
   isSupabaseConfigured,
   type AvisoComunidad,
 } from "@/lib/supabase";
+import { APP_CONFIG } from "@/lib/app-config";
+import { DEMO_AVISOS } from "@/lib/demo-data";
 import { useAuth } from "@/contexts/auth-context";
 
 export default function CommunityPanel() {
@@ -32,13 +34,23 @@ export default function CommunityPanel() {
   // Verificar configuración de Supabase
   useEffect(() => {
     if (!isSupabaseConfigured()) {
-      console.error("❌ Supabase no está configurado correctamente");
+      if (APP_CONFIG.demoMode) {
+        console.log("ℹ️ Supabase no configurado, usando modo demo offline");
+      } else {
+        console.error("❌ Supabase no está configurado correctamente");
+      }
       setLoading(false);
       return;
     }
   }, []);
 
   const cargarAvisos = async () => {
+    if (!supabase && APP_CONFIG.demoMode) {
+      setAvisos(DEMO_AVISOS);
+      setLoading(false);
+      return;
+    }
+
     if (!supabase) {
       console.error("❌ No se puede cargar avisos: Supabase no configurado");
       setLoading(false);
@@ -76,6 +88,12 @@ export default function CommunityPanel() {
   };
 
   useEffect(() => {
+    if (!supabase && APP_CONFIG.demoMode) {
+      setAvisos(DEMO_AVISOS);
+      setLoading(false);
+      return;
+    }
+
     if (!supabase) {
       console.error(
         "❌ No se puede configurar suscripción: Supabase no configurado"
@@ -106,6 +124,11 @@ export default function CommunityPanel() {
   }, []);
 
   const enviarAviso = async () => {
+    if (APP_CONFIG.demoReadOnly) {
+      console.warn("Modo demo activo: envío de avisos bloqueado");
+      return;
+    }
+
     if (!nuevoMensaje.trim() || !usuario) {
       console.warn(
         "No se puede enviar: mensaje vacío o usuario no autenticado"
@@ -263,6 +286,12 @@ export default function CommunityPanel() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {APP_CONFIG.demoReadOnly && (
+            <div className="rounded-md border border-yellow-700 bg-yellow-900/20 p-3 text-sm text-yellow-200">
+              Modo demo: el foro está en solo lectura.
+            </div>
+          )}
+
           <Textarea
             placeholder={
               isSupabaseConfigured()
@@ -273,7 +302,7 @@ export default function CommunityPanel() {
             onChange={(e) => setNuevoMensaje(e.target.value)}
             className="bg-gray-800 border-gray-700 text-white placeholder-gray-500 min-h-[100px] text-base"
             maxLength={500}
-            disabled={!isSupabaseConfigured()}
+            disabled={!isSupabaseConfigured() || APP_CONFIG.demoReadOnly}
           />
           <div className="flex items-center justify-between">
             <span className="text-gray-500 text-sm">
@@ -282,7 +311,10 @@ export default function CommunityPanel() {
             <Button
               onClick={enviarAviso}
               disabled={
-                !nuevoMensaje.trim() || enviando || !isSupabaseConfigured()
+                !nuevoMensaje.trim() ||
+                enviando ||
+                !isSupabaseConfigured() ||
+                APP_CONFIG.demoReadOnly
               }
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 disabled:bg-gray-600 disabled:cursor-not-allowed"
             >
@@ -304,7 +336,7 @@ export default function CommunityPanel() {
 
       {/* Lista de avisos */}
       <div className="space-y-4">
-        {!isSupabaseConfigured() ? (
+        {!isSupabaseConfigured() && !APP_CONFIG.demoMode ? (
           <div className="text-center py-8">
             <MessageCircle className="h-12 w-12 text-red-500 mx-auto mb-2" />
             <p className="text-red-400">Error de configuración</p>

@@ -18,6 +18,7 @@ import {
   Clock,
 } from "lucide-react";
 import { supabase, type PuntoEncuentro } from "@/lib/supabase";
+import { APP_CONFIG } from "@/lib/app-config";
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -85,7 +86,7 @@ export default function AdminPanel({
       const { data, error } = await supabase
         .from("alertas_volcan")
         .select("nivel_alerta")
-        .order("fecha_creacion", { ascending: false })
+        .order("ultima_actualizacion", { ascending: false })
         .limit(1)
         .single();
 
@@ -143,6 +144,11 @@ export default function AdminPanel({
   };
 
   const eliminarMensaje = async (mensajeId: string) => {
+    if (APP_CONFIG.demoReadOnly) {
+      alert("Modo demo: la moderación está deshabilitada (solo lectura).");
+      return;
+    }
+
     if (!supabase) return;
 
     const confirmar = window.confirm(
@@ -188,6 +194,11 @@ export default function AdminPanel({
   };
 
   const cambiarEstadoPunto = async (puntoId: string, nuevoEstado: boolean) => {
+    if (APP_CONFIG.demoReadOnly) {
+      alert("Modo demo: no se puede modificar el estado de puntos.");
+      return;
+    }
+
     if (!supabase) return;
 
     if (!puntoId) {
@@ -218,6 +229,11 @@ export default function AdminPanel({
   };
 
   const resetearTodosPuntos = async () => {
+    if (APP_CONFIG.demoReadOnly) {
+      alert("Modo demo: no se pueden resetear puntos.");
+      return;
+    }
+
     if (!supabase) return;
 
     setLoadingPuntos(true);
@@ -243,6 +259,11 @@ export default function AdminPanel({
   };
 
   const cambiarNivelAlerta = async (nuevoNivel: string) => {
+    if (APP_CONFIG.demoReadOnly) {
+      alert("Modo demo: el cambio de nivel está deshabilitado.");
+      return;
+    }
+
     if (!supabase) return;
 
     setLoading(true);
@@ -368,6 +389,12 @@ export default function AdminPanel({
         </CardHeader>
 
         <CardContent className="space-y-6">
+          {APP_CONFIG.demoReadOnly && (
+            <div className="rounded-md border border-yellow-700 bg-yellow-900/20 p-3 text-sm text-yellow-200">
+              Modo demo activo: las acciones de edición están bloqueadas.
+            </div>
+          )}
+
           <div className="text-center">
             <p className="text-sm text-gray-400 mb-4">
               Usa este panel para simular cambios en el nivel de alerta del
@@ -393,7 +420,7 @@ export default function AdminPanel({
                 <Button
                   key={nivel.nivel}
                   onClick={() => cambiarNivelAlerta(nivel.nivel)}
-                  disabled={loading || isActive}
+                  disabled={loading || isActive || APP_CONFIG.demoReadOnly}
                   className={`
                     h-auto p-4 flex flex-col items-center space-y-2 transition-all
                     ${
@@ -460,7 +487,7 @@ export default function AdminPanel({
                 </span>
                 <Button
                   onClick={resetearTodosPuntos}
-                  disabled={loadingPuntos}
+                  disabled={loadingPuntos || APP_CONFIG.demoReadOnly}
                   size="sm"
                   variant="outline"
                   className="border-green-700 text-green-400 hover:bg-green-900/20"
@@ -500,7 +527,7 @@ export default function AdminPanel({
                         onClick={() =>
                           cambiarEstadoPunto(punto.id, !punto.ocupado)
                         }
-                        disabled={loadingPuntos}
+                        disabled={loadingPuntos || APP_CONFIG.demoReadOnly}
                         size="sm"
                         className={`${
                           punto.ocupado
@@ -573,7 +600,7 @@ export default function AdminPanel({
                         </div>
                         <Button
                           onClick={() => eliminarMensaje(mensaje.id)}
-                          disabled={loadingMensajes}
+                          disabled={loadingMensajes || APP_CONFIG.demoReadOnly}
                           size="sm"
                           variant="outline"
                           className="ml-3 border-red-800 text-red-400 hover:bg-red-900/20 hover:border-red-700"
@@ -606,7 +633,10 @@ export default function AdminPanel({
               <li>
                 • Los parámetros se generan automáticamente según el nivel
               </li>
-              <li>• Marca puntos como "Lleno" cuando alcancen su capacidad</li>
+              <li>
+                • Marca puntos como &quot;Lleno&quot; cuando alcancen su
+                capacidad
+              </li>
               <li>• Los puntos llenos aparecerán en rojo en el mapa</li>
               <li>
                 • Usa el botón <Trash2 className="h-3 w-3 inline mx-1" /> para

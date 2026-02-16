@@ -18,7 +18,25 @@ import {
   type MensajeChat,
   type EstadisticasConversacion,
 } from "@/lib/supabase";
+import { APP_CONFIG } from "@/lib/app-config";
+import { DEMO_USUARIO } from "@/lib/demo-data";
 import { useAuth } from "@/contexts/auth-context";
+
+const OFFLINE_USERS: Usuario[] = [
+  DEMO_USUARIO,
+  {
+    id: "demo-maria",
+    nombre: "María González",
+    telefono: "+56 9 1234 5678",
+    fecha_creacion: new Date().toISOString(),
+  },
+  {
+    id: "demo-carlos",
+    nombre: "Carlos Muñoz",
+    telefono: "+56 9 9876 5432",
+    fecha_creacion: new Date().toISOString(),
+  },
+];
 
 export default function ChatComponent() {
   const [conversaciones, setConversaciones] = useState<
@@ -50,6 +68,18 @@ export default function ChatComponent() {
 
   // Función para recargar estadísticas de conversaciones
   const recargarConversaciones = useCallback(async () => {
+    if (!supabase && APP_CONFIG.demoMode && usuario) {
+      const data = OFFLINE_USERS
+        .filter((u) => u.id !== usuario.id)
+        .map((u) => ({
+          usuario: u,
+          mensajesNoLeidos: 0,
+          fechaUltimaActividad: new Date().toISOString(),
+        })) as EstadisticasConversacion[];
+      setConversaciones(data);
+      return;
+    }
+
     if (!supabase || !usuario) return;
 
     try {
@@ -159,6 +189,27 @@ export default function ChatComponent() {
 
   // Cargar mensajes y suscribirse a tiempo real
   useEffect(() => {
+    if (!supabase && APP_CONFIG.demoMode && usuarioSeleccionado) {
+      const demoMsgs: MensajeChat[] = [
+        {
+          id: "demo-msg-1",
+          emisor_id: usuarioSeleccionado.id,
+          receptor_id: usuario?.id || "",
+          mensaje: "Este es un chat de demostración sin backend.",
+          fecha_envio: new Date(Date.now() - 120000).toISOString(),
+        },
+        {
+          id: "demo-msg-2",
+          emisor_id: usuario?.id || "",
+          receptor_id: usuarioSeleccionado.id,
+          mensaje: "Perfecto, funcionando en modo offline demo.",
+          fecha_envio: new Date(Date.now() - 60000).toISOString(),
+        },
+      ];
+      setMensajes(demoMsgs);
+      return;
+    }
+
     if (!usuarioSeleccionado || !usuario || !supabase) return;
 
     const cargarMensajes = async () => {
@@ -278,6 +329,8 @@ export default function ChatComponent() {
 
   // Suscripción global para escuchar TODOS los mensajes dirigidos al usuario actual
   useEffect(() => {
+    if (!supabase && APP_CONFIG.demoMode) return;
+
     if (!usuario || !supabase) return;
 
     console.log(
@@ -350,6 +403,11 @@ export default function ChatComponent() {
   };
 
   const enviarMensaje = async () => {
+    if (APP_CONFIG.demoReadOnly) {
+      console.warn("Modo demo activo: chat en solo lectura");
+      return;
+    }
+
     if (!nuevoMensaje.trim() || !usuario || !usuarioSeleccionado || !supabase)
       return;
 
@@ -605,17 +663,25 @@ export default function ChatComponent() {
 
       {/* Input para nuevo mensaje */}
       <div className="flex space-x-2">
+        {APP_CONFIG.demoReadOnly && (
+          <div className="w-full rounded-md border border-yellow-700 bg-yellow-900/20 p-3 text-sm text-yellow-200">
+            Modo demo: el chat está en solo lectura.
+          </div>
+        )}
+      </div>
+
+      <div className="flex space-x-2">
         <Input
           placeholder="Escribe un mensaje..."
           value={nuevoMensaje}
           onChange={(e) => setNuevoMensaje(e.target.value)}
           onKeyPress={(e) => e.key === "Enter" && enviarMensaje()}
           className="bg-gray-800 border-gray-700 text-white placeholder-gray-500 text-base"
-          disabled={enviando}
+          disabled={enviando || APP_CONFIG.demoReadOnly}
         />
         <Button
           onClick={enviarMensaje}
-          disabled={!nuevoMensaje.trim() || enviando}
+          disabled={!nuevoMensaje.trim() || enviando || APP_CONFIG.demoReadOnly}
           className="bg-green-600 hover:bg-green-700 text-white px-6"
         >
           {enviando ? (

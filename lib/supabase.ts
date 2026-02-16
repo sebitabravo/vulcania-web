@@ -4,16 +4,24 @@ import { createClient } from "@supabase/supabase-js"
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
+const demoMode = (process.env.NEXT_PUBLIC_DEMO_MODE || '').toLowerCase() === 'true'
+
 // Validación de variables de entorno
 if (!supabaseUrl || !supabaseAnonKey) {
   const missingVars: string[] = []
   if (!supabaseUrl) missingVars.push('NEXT_PUBLIC_SUPABASE_URL')
   if (!supabaseAnonKey) missingVars.push('NEXT_PUBLIC_SUPABASE_ANON_KEY')
 
-  console.error('❌ Variables de entorno de Supabase no configuradas:', missingVars.join(', '))
-
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error(`Variables de entorno de Supabase faltantes en producción: ${missingVars.join(', ')}`)
+  if (demoMode) {
+    console.log(
+      'ℹ️ Supabase no configurado (esperado en modo demo):',
+      missingVars.join(', ')
+    )
+  } else {
+    console.warn(
+      '⚠️ Supabase no configurado. La app iniciará en modo limitado/demo:',
+      missingVars.join(', ')
+    )
   }
 }
 

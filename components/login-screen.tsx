@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mountain, Phone, ArrowRight } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
+import { APP_CONFIG } from "@/lib/app-config";
 
 export default function LoginScreen() {
   const [telefono, setTelefono] = useState("+56 9 "); // Siempre incluir el 9
@@ -176,7 +177,7 @@ export default function LoginScreen() {
     setError("");
 
     // Usuario predefinido para demo
-    const demoUser = "+56 9 8765 4321";
+    const demoUser = APP_CONFIG.demoPhone;
 
     // Simular delay breve para mostrar loading
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -359,6 +360,14 @@ export default function LoginScreen() {
                 <strong>Demo:</strong> Puedes usar cualquier número válido
                 chileno o el botón de acceso directo para probar la aplicación
                 sin SMS real.
+                {APP_CONFIG.demoMode && (
+                  <>
+                    <br />
+                    <span className="text-blue-300">
+                      Usuario demo sugerido: {APP_CONFIG.demoPhone}
+                    </span>
+                  </>
+                )}
               </p>
             </div>
           </CardContent>

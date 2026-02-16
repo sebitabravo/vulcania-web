@@ -96,7 +96,8 @@ Cuando el volcán está en **Naranja o Rojo**, se activa automáticamente:
 ### ⚡ Estado del Proyecto
 - ✅ Claves comprometidas removidas del código
 - ✅ `.gitignore` configurado correctamente
-- ❌ **Requiere nuevas credenciales para funcionar**
+- ✅ Puede funcionar en **modo demo offline** sin Supabase
+- ⚠️ Para modo completo (persistencia/realtime), sí requiere credenciales nuevas
 
 ---
 
@@ -106,8 +107,27 @@ Cuando el volcán está en **Naranja o Rojo**, se activa automáticamente:
 
 - Node.js 18+
 - pnpm (recomendado) o npm
-- Cuenta en Supabase
-- Proyecto configurado en Supabase
+- Cuenta en Supabase (solo si usarás modo completo)
+- Proyecto configurado en Supabase (solo si usarás modo completo)
+
+### 🧪 Modo Demo Sin Supabase (Recomendado si ya no usas Supabase)
+
+Puedes ejecutar y desplegar la app sin Supabase:
+
+```env
+NEXT_PUBLIC_DEMO_MODE="true"
+NEXT_PUBLIC_DEMO_READONLY="true"
+NEXT_PUBLIC_DEMO_PHONE="+56 9 8765 4321"
+NEXT_PUBLIC_ENABLE_ADMIN_PANEL="false"
+```
+
+Con esto tendrás:
+- Login demo local
+- Estado volcánico demo
+- Mapa con puntos de encuentro demo
+- Comunidad/chat demo (solo lectura si `NEXT_PUBLIC_DEMO_READONLY=true`)
+
+No tendrás persistencia real ni realtime entre usuarios.
 
 ### 🛠️ Instalación
 
@@ -152,6 +172,12 @@ NEXT_PUBLIC_SUPABASE_URL="https://tu-nuevo-proyecto.supabase.co"
 NEXT_PUBLIC_SUPABASE_ANON_KEY="tu_nueva_anon_key_aqui"
 SUPABASE_SERVICE_ROLE_KEY="tu_nueva_service_role_key_aqui"
 SUPABASE_JWT_SECRET="tu_nuevo_jwt_secret_aqui"
+
+# Demo (frontend)
+NEXT_PUBLIC_DEMO_MODE="true"
+NEXT_PUBLIC_DEMO_READONLY="true"
+NEXT_PUBLIC_DEMO_PHONE="+56 9 0000 0000"
+NEXT_PUBLIC_ENABLE_ADMIN_PANEL="false"
 ```
 
 > **⚠️ IMPORTANTE**:
@@ -237,6 +263,25 @@ SUPABASE_JWT_SECRET="nuevo_jwt_secret_produccion"
 ---
 
 ## 🎯 Cómo Usar la Aplicación
+
+### 🎬 Modo Demo Recomendado (Portafolio)
+
+Para una demo pública y estable:
+
+1. Ejecuta `scripts/init.sql` completo en Supabase (incluye usuario `Demo` y data inicial).
+2. Configura en Vercel:
+   - `NEXT_PUBLIC_DEMO_MODE=true`
+   - `NEXT_PUBLIC_DEMO_READONLY=true`
+   - `NEXT_PUBLIC_DEMO_PHONE=+56 9 0000 0000`
+   - `NEXT_PUBLIC_ENABLE_ADMIN_PANEL=false`
+3. Mantén también:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+Con esta configuración:
+- Se permite navegar y visualizar información completa.
+- Se bloquean acciones de escritura (foro/chat/admin) para no contaminar datos.
+- El panel admin por atajo (`Ctrl+Shift+A`) queda deshabilitado.
 
 ### Para Usuarios Regulares
 

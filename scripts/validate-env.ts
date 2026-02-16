@@ -1,47 +1,72 @@
 #!/usr/bin/env npx tsx
 
 /**
- * Script para validar las variables de entorno de Supabase
+ * Script para validar variables de entorno (modo demo u modo completo con Supabase)
  * Uso: npm run validate-env
  */
 
 interface EnvVariable {
   name: string;
-  required: boolean;
+  requiredInFullMode?: boolean;
   description: string;
 }
 
-const REQUIRED_ENV_VARS: EnvVariable[] = [
+const ENV_VARS: EnvVariable[] = [
   {
     name: 'NEXT_PUBLIC_SUPABASE_URL',
-    required: true,
+    requiredInFullMode: true,
     description: 'URL del proyecto de Supabase'
   },
   {
     name: 'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-    required: true,
+    requiredInFullMode: true,
     description: 'Clave anónima de Supabase (public)'
   },
   {
     name: 'SUPABASE_SERVICE_ROLE_KEY',
-    required: false,
     description: 'Clave de servicio de Supabase (para operaciones admin)'
   },
   {
     name: 'SUPABASE_JWT_SECRET',
-    required: false,
     description: 'Secreto JWT de Supabase'
+  },
+  {
+    name: 'NEXT_PUBLIC_DEMO_MODE',
+    description: 'Activa modo demo en el frontend'
+  },
+  {
+    name: 'NEXT_PUBLIC_DEMO_READONLY',
+    description: 'Bloquea escrituras en modo demo'
+  },
+  {
+    name: 'NEXT_PUBLIC_DEMO_PHONE',
+    description: 'Teléfono sugerido para acceso demo'
+  },
+  {
+    name: 'NEXT_PUBLIC_ENABLE_ADMIN_PANEL',
+    description: 'Permite abrir panel admin con atajo (Ctrl+Shift+A)'
   }
 ];
 
 function validateEnvironment() {
-  console.log('🔍 Validando variables de entorno de Supabase...\n');
+  console.log('🔍 Validando variables de entorno...\n');
 
   let hasErrors = false;
   let hasWarnings = false;
+  const hasSupabaseConfig = Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+  const demoModeSetting = process.env.NEXT_PUBLIC_DEMO_MODE;
+  const demoMode = demoModeSetting
+    ? demoModeSetting.toLowerCase() === 'true'
+    : !hasSupabaseConfig;
 
-  REQUIRED_ENV_VARS.forEach(({ name, required, description }) => {
+  console.log(`🧭 Modo detectado: ${demoMode ? 'DEMO OFFLINE' : 'MODO COMPLETO (con Supabase)'}`);
+  console.log('');
+
+  ENV_VARS.forEach(({ name, requiredInFullMode, description }) => {
     const value = process.env[name];
+    const required = Boolean(requiredInFullMode && !demoMode);
     const status = value ? '✅' : (required ? '❌' : '⚠️');
 
     console.log(`${status} ${name}`);
@@ -56,7 +81,7 @@ function validateEnvironment() {
         console.log('   ❌ FALTANTE - Esta variable es OBLIGATORIA');
         hasErrors = true;
       } else {
-        console.log('   ⚠️  OPCIONAL - Funcionalidad limitada sin esta variable');
+        console.log('   ⚠️  OPCIONAL - Funcionalidad limitada o modo demo activo');
         hasWarnings = true;
       }
     }
@@ -76,11 +101,16 @@ function validateEnvironment() {
     console.log('🔧 Para corregir:');
     console.log('   • Local: Agrega las variables a tu archivo .env.local');
     console.log('   • Vercel: Ve a tu proyecto → Settings → Environment Variables');
+    console.log('   • Si no usarás Supabase, activa NEXT_PUBLIC_DEMO_MODE=true');
     console.log('');
     process.exit(1);
   } else if (hasWarnings) {
     console.log('⚠️  VALIDACIÓN PARCIAL: Variables opcionales faltantes');
-    console.log('   El proyecto funcionará con funcionalidad limitada');
+    console.log(
+      demoMode
+        ? '   El proyecto funcionará en modo demo sin Supabase'
+        : '   El proyecto funcionará con funcionalidad limitada'
+    );
   } else {
     console.log('✅ VALIDACIÓN EXITOSA: Todas las variables están configuradas');
   }
@@ -97,14 +127,16 @@ function showVercelInstructions() {
   console.log('3. Agrega estas variables:');
   console.log('');
 
-  REQUIRED_ENV_VARS.forEach(({ name, required }) => {
-    console.log(`   ${required ? '🔴' : '🟡'} ${name}`);
+  ENV_VARS.forEach(({ name, requiredInFullMode }) => {
+    console.log(`   ${requiredInFullMode ? '🟡' : '🟢'} ${name}`);
   });
 
   console.log('');
   console.log('4. Redeploy tu aplicación');
+  console.log('5. Si usas demo offline, define NEXT_PUBLIC_DEMO_MODE=true.');
+  console.log('6. Si usas modo completo, agrega URL y ANON KEY de Supabase.');
   console.log('');
-  console.log('🔴 = Obligatoria | 🟡 = Opcional');
+  console.log('🟡 = Requerida solo en modo completo | 🟢 = Opcional');
 }
 
 if (require.main === module) {
@@ -117,4 +149,4 @@ if (require.main === module) {
   }
 }
 
-export { validateEnvironment, REQUIRED_ENV_VARS };
+export { validateEnvironment, ENV_VARS };

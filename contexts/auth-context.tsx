@@ -4,6 +4,8 @@ import type React from "react";
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { supabase, type Usuario } from "@/lib/supabase";
+import { APP_CONFIG } from "@/lib/app-config";
+import { DEMO_USUARIO } from "@/lib/demo-data";
 
 interface AuthContextType {
   usuario: Usuario | null;
@@ -92,6 +94,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Verificar que supabase esté configurado
       if (!supabase) {
+        if (APP_CONFIG.demoMode) {
+          const telefonoNormalizado = normalizarTelefono(telefono);
+          const isDemoUser =
+            telefonoNormalizado === normalizarTelefono(APP_CONFIG.demoPhone);
+
+          const usuarioDemo: Usuario = isDemoUser
+            ? DEMO_USUARIO
+            : {
+                id: `demo-${telefonoNormalizado.replace(/[^\d]/g, "")}`,
+                nombre: `Visitante ${telefonoNormalizado.slice(-4)}`,
+                telefono: telefonoNormalizado,
+                fecha_creacion: new Date().toISOString(),
+              };
+
+          setUsuario(usuarioDemo);
+          if (isClient && typeof window !== "undefined") {
+            localStorage.setItem("vulcania_usuario", JSON.stringify(usuarioDemo));
+          }
+          console.log("✅ Login demo offline exitoso");
+          return true;
+        }
+
         console.error("❌ Supabase no está configurado");
         return false;
       }
@@ -206,6 +230,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Si el error es que no se encontró el usuario (PGRST116), intentar crear uno nuevo
       if (error && error.code === "PGRST116") {
+        if (APP_CONFIG.demoReadOnly) {
+          console.warn(
+            "Modo demo activo: no se crean usuarios automáticamente."
+          );
+          return false;
+        }
+
         console.log("👤 Usuario no encontrado, creando nuevo usuario...");
 
         const { data: nuevoUsuario, error: errorCreacion } = await supabase

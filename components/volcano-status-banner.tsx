@@ -911,95 +911,81 @@ export default function VolcanoStatusBanner() {
           </div>
         </div>
 
-        {/* Simulador de niveles de alerta */}
-        <div className="max-w-7xl mx-auto px-6 lg:px-8 pb-6">
-          <div className="flex items-center justify-center space-x-3 mb-4">
-            <span className="text-gray-400 text-sm mr-3">Simular nivel:</span>
-            <button
-              onClick={() => {
-                console.log("🟢 Simulando nivel VERDE");
-                simularCambioNivel("verde");
-              }}
-              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
-            >
-              Verde
-            </button>
-            <button
-              onClick={() => {
-                console.log("🟡 Simulando nivel AMARILLO");
-                simularCambioNivel("amarillo");
-              }}
-              className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-sm rounded-lg transition-colors"
-            >
-              Amarillo
-            </button>
-            <button
-              onClick={() => {
-                console.log("🟠 Simulando nivel NARANJA");
-                simularCambioNivel("naranja");
-              }}
-              className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm rounded-lg transition-colors"
-            >
-              Naranja 🔊
-            </button>
-            <button
-              onClick={() => {
-                console.log("🔴 Simulando nivel ROJO");
-                simularCambioNivel("rojo");
-              }}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition-colors"
-            >
-              Rojo 🚨
-            </button>
-          </div>
-
-          {/* Botones de prueba */}
-          <div className="flex items-center justify-center space-x-3">
-            <button
-              onClick={forceEmergency}
-              className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-lg transition-colors shadow-lg animate-pulse"
-            >
-              🚨 ACTIVAR EMERGENCIA AHORA
-            </button>
-            <button
-              onClick={() => {
-                console.log("🧪 Probando modal simple");
-                setAlertDismissed(false);
-                setShowCriticalAlert(true);
-                setTimeout(() => {
-                  createAlertSound("rojo");
-                }, 500);
-              }}
-              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors"
-            >
-              🧪 Modal Simple
-            </button>
-            <button
-              onClick={() => {
-                console.log("🔄 Reseteando todo");
-                setEmergencyMode(false);
-                setAlertDismissed(false);
-                setShowCriticalAlert(false);
-                setIsPlayingSound(false);
-                stopAlertSound();
-              }}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
-            >
-              🔄 Reset Todo
-            </button>
-          </div>
-
-          {soundEnabled && (
-            <div className="text-center mt-3">
-              <span className="text-sm text-gray-400">
-                🔊 Sonidos de alerta activados para niveles críticos
-              </span>
+        {process.env.NODE_ENV === "development" && (
+          <div className="max-w-7xl mx-auto px-6 lg:px-8 pb-6">
+            <div className="flex items-center justify-center space-x-3 mb-4">
+              <span className="text-gray-400 text-sm mr-3">Simular nivel:</span>
+              <button
+                onClick={() => simularCambioNivel("verde")}
+                className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg transition-colors"
+              >
+                Verde
+              </button>
+              <button
+                onClick={() => simularCambioNivel("amarillo")}
+                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white text-sm rounded-lg transition-colors"
+              >
+                Amarillo
+              </button>
+              <button
+                onClick={() => simularCambioNivel("naranja")}
+                className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm rounded-lg transition-colors"
+              >
+                Naranja 🔊
+              </button>
+              <button
+                onClick={() => simularCambioNivel("rojo")}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg transition-colors"
+              >
+                Rojo 🚨
+              </button>
             </div>
-          )}
-        </div>
+
+            <div className="flex items-center justify-center space-x-3">
+              <button
+                onClick={forceEmergency}
+                className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-sm rounded-lg transition-colors shadow-lg animate-pulse"
+              >
+                🚨 ACTIVAR EMERGENCIA AHORA
+              </button>
+              <button
+                onClick={() => {
+                  setAlertDismissed(false);
+                  setShowCriticalAlert(true);
+                  setTimeout(() => {
+                    createAlertSound("rojo");
+                  }, 500);
+                }}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm rounded-lg transition-colors"
+              >
+                🧪 Modal Simple
+              </button>
+              <button
+                onClick={() => {
+                  setEmergencyMode(false);
+                  setAlertDismissed(false);
+                  setShowCriticalAlert(false);
+                  setIsPlayingSound(false);
+                  stopAlertSound();
+                }}
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white text-sm rounded-lg transition-colors"
+              >
+                🔄 Reset Todo
+              </button>
+            </div>
+
+            {soundEnabled && (
+              <div className="text-center mt-3">
+                <span className="text-sm text-gray-400">
+                  🔊 Sonidos de alerta activados para niveles críticos
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Popup de Alerta Crítica - SIMPLIFICADO PARA DEBUG */}
+      {/* Popup de Alerta Crítica */}
       {showCriticalAlert && !alertDismissed && volcanoData && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-gradient-to-br from-red-950 to-black rounded-3xl p-8 max-w-lg w-full shadow-2xl border-2 border-red-500 animate-pulse">
@@ -1021,7 +1007,6 @@ export default function VolcanoStatusBanner() {
               </div>
               <button
                 onClick={() => {
-                  console.log("❌ Cerrando modal de emergencia");
                   setShowCriticalAlert(false);
                   setAlertDismissed(true);
                   setIsPlayingSound(false);
@@ -1050,10 +1035,7 @@ export default function VolcanoStatusBanner() {
 
               <div className="bg-red-900/50 border border-red-500 rounded-xl p-4">
                 <p className="text-red-300 font-bold">
-                  � Sonido activo: {isPlayingSound ? "SÍ" : "NO"}
-                </p>
-                <p className="text-red-300">
-                  Estado modal: {showCriticalAlert ? "VISIBLE" : "OCULTA"}
+                  Sigue las instrucciones de evacuación y mantente en zonas seguras.
                 </p>
               </div>
             </div>
@@ -1061,7 +1043,6 @@ export default function VolcanoStatusBanner() {
             <div className="space-y-3">
               <Button
                 onClick={() => {
-                  console.log("🎵 Reproduciendo sonido manualmente");
                   createAlertSound(
                     volcanoData.alerta.nivel_alerta as "naranja" | "rojo"
                   );
@@ -1074,7 +1055,6 @@ export default function VolcanoStatusBanner() {
 
               <Button
                 onClick={() => {
-                  console.log("✅ Cerrando modal - Entendido");
                   setShowCriticalAlert(false);
                   setAlertDismissed(true);
                   setIsPlayingSound(false);

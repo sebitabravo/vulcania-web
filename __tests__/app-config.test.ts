@@ -30,7 +30,7 @@ describe('APP_CONFIG', () => {
     const { APP_CONFIG } = await import('../lib/app-config')
     expect(APP_CONFIG).toHaveProperty('demoMode')
     expect(APP_CONFIG).toHaveProperty('demoPhone')
-    expect(APP_CONFIG).toHaveProperty('volcanoName')
+    expect(APP_CONFIG).toHaveProperty('demoReadOnly')
   })
 
   it('should respect DEMO_MODE environment variable', async () => {
@@ -39,9 +39,9 @@ describe('APP_CONFIG', () => {
     expect(APP_CONFIG.demoMode).toBe(true)
   })
 
-  it('should have valid volcano name', async () => {
+  it('should have valid demo phone format', async () => {
     const { APP_CONFIG } = await import('../lib/app-config')
-    expect(typeof APP_CONFIG.volcanoName).toBe('string')
-    expect(APP_CONFIG.volcanoName.length).toBeGreaterThan(0)
+    expect(typeof APP_CONFIG.demoPhone).toBe('string')
+    expect(APP_CONFIG.demoPhone.length).toBeGreaterThan(0)
   })
 })

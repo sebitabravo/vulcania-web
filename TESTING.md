@@ -43,9 +43,12 @@ vulcania-web/
 │   ├── utils.test.ts         # Tests para lib/utils.ts
 │   ├── app-config.test.ts    # Tests para configuración
 │   ├── auth-utils.test.ts    # Tests para auth helpers
+│   ├── auth-context.test.tsx # Tests para AuthContext
+│   ├── login-screen.test.tsx # Tests para LoginScreen
 │   ├── button.test.tsx       # Tests para componentes UI
 │   └── *.test.ts(x)          # Nuevos tests
 ├── vitest.config.ts          # Configuración de Vitest
+├── TESTING.md                # Esta documentación
 └── package.json
 ```
 
@@ -76,6 +79,38 @@ describe('Button', () => {
   it('should render with text', () => {
     render(<Button>Click</Button>)
     expect(screen.getByText('Click')).toBeInTheDocument()
+  })
+})
+```
+
+### Test de Componente Complejo (LoginScreen)
+
+```typescript
+// __tests__/login-screen.test.tsx
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import LoginScreen from '@/components/login-screen'
+
+describe('LoginScreen', () => {
+  it('should format phone number as user types', async () => {
+    render(<LoginScreen />)
+    const user = userEvent.setup()
+    const phoneInput = screen.getByPlaceholderText('+56 9 1234 5678')
+    
+    await user.type(phoneInput, '12345678')
+    expect(phoneInput).toHaveValue('+56 9 1234 5678')
+  })
+
+  it('should call login on submit', async () => {
+    render(<LoginScreen />)
+    const user = userEvent.setup()
+    
+    await user.type(screen.getByPlaceholderText('+56 9 1234 5678'), '12345678')
+    await user.click(screen.getByText('Enviar código SMS'))
+    
+    await waitFor(() => {
+      expect(mockLogin).toHaveBeenCalledWith('+56 9 1234 5678')
+    })
   })
 })
 ```

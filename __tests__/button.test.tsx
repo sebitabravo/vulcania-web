@@ -32,9 +32,8 @@ describe('Button Component', () => {
   it('should call onClick when clicked', async () => {
     const handleClick = vi.fn()
     render(<Button onClick={handleClick}>Click</Button>)
-    await import('@testing-library/user-event').then(({ default: userEvent }) => {
-      userEvent.click(screen.getByText('Click'))
-    })
+    const { default: userEvent } = await import('@testing-library/user-event')
+    await userEvent.click(screen.getByText('Click'))
     expect(handleClick).toHaveBeenCalledTimes(1)
   })
 

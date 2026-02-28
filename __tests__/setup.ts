@@ -5,6 +5,8 @@
 
 import '@testing-library/jest-dom'
 
+process.env.NODE_ENV = 'test'
+
 // Mock for Next.js router
 vi.mock('next/navigation', () => ({
   useRouter: () => ({
@@ -24,17 +26,6 @@ vi.mock('@/lib/supabase', () => ({
   Usuario: {},
   AlertaVolcan: {},
   ParametrosVolcan: {},
-}))
-
-// Mock for auth context
-vi.mock('@/contexts/auth-context', () => ({
-  AuthProvider: ({ children }: { children: React.ReactNode }) => children,
-  useAuth: () => ({
-    usuario: null,
-    login: vi.fn(),
-    logout: vi.fn(),
-    loading: false,
-  }),
 }))
 
 // Suppress console warnings during tests

@@ -1,17 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, AlertCircle, X, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { supabase } from "@/lib/supabase";
+import { supabase, type AlertaVolcan, type InformacionVolcan } from "@/lib/supabase";
+
+declare global {
+  interface Window {
+    webkitAudioContext: typeof AudioContext;
+  }
+}
+
+interface CriticalAlert extends AlertaVolcan {
+  informacion_volcan?: Pick<InformacionVolcan, "nombre">;
+}
 
 // Función para crear sonidos de alerta usando Web Audio API
 const createAlertSound = (type: "naranja" | "rojo") => {
   console.log("🎵 Creando sonido de alerta:", type);
   try {
-    const audioContext = new (window.AudioContext ||
-      (window as any).webkitAudioContext)();
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
     const playBeep = (
       frequency: number,
@@ -67,23 +76,23 @@ export default function EmergencyModal() {
   const [showModal, setShowModal] = useState(false);
   const [alertDismissed, setAlertDismissed] = useState(false);
   // ELIMINAMOS soundEnabled e isPlayingSound - el sonido SIEMPRE debe sonar
-  const [currentAlert, setCurrentAlert] = useState<any>(null);
+  const [currentAlert, setCurrentAlert] = useState<CriticalAlert | null>(null);
   const [lastAlertId, setLastAlertId] = useState<string | null>(null);
   const [soundInterval, setSoundInterval] = useState<NodeJS.Timeout | null>(
     null
   );
 
   // Función para detener sonido (solo cuando se cierra la modal)
-  const stopAlertSound = () => {
+  const stopAlertSound = useCallback(() => {
     console.log("🔇 Deteniendo sonido de alerta");
     if (soundInterval) {
       clearInterval(soundInterval);
       setSoundInterval(null);
     }
-  };
+  }, [soundInterval]);
 
   // Función para reproducir sonido OBLIGATORIO y continuo
-  const playAlertSound = (nivel: "naranja" | "rojo") => {
+  const playAlertSound = useCallback((nivel: "naranja" | "rojo") => {
     console.log("🎵 Iniciando sonido PERSISTENTE:", nivel);
 
     // Reproducir sonido inmediatamente
@@ -109,7 +118,7 @@ export default function EmergencyModal() {
     );
 
     setSoundInterval(interval);
-  };
+  }, [alertDismissed, showModal, soundInterval]);
 
   // Función para forzar emergencia (para pruebas)
   const forceEmergency = () => {
@@ -208,14 +217,14 @@ export default function EmergencyModal() {
       clearInterval(interval);
       stopAlertSound();
     };
-  }, [alertDismissed, showModal, lastAlertId]); // Agregar dependencias relevantes
+  }, [alertDismissed, showModal, lastAlertId, playAlertSound, stopAlertSound]); // Agregar dependencias relevantes
 
   // Cleanup al desmontar
   useEffect(() => {
     return () => {
       stopAlertSound();
     };
-  }, []);
+  }, [stopAlertSound]);
 
   if (!showModal || !currentAlert) return null;
 

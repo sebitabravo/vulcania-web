@@ -17,7 +17,11 @@ import {
   Trash2,
   Clock,
 } from "lucide-react";
-import { supabase, type PuntoEncuentro } from "@/lib/supabase";
+import {
+  supabase,
+  type PuntoEncuentro,
+  type AvisoComunidad,
+} from "@/lib/supabase";
 import { APP_CONFIG } from "@/lib/app-config";
 
 interface AdminPanelProps {
@@ -64,7 +68,7 @@ export default function AdminPanel({
   const [loading, setLoading] = useState(false);
   const [puntosEncuentro, setPuntosEncuentro] = useState<PuntoEncuentro[]>([]);
   const [loadingPuntos, setLoadingPuntos] = useState(false);
-  const [mensajesComunidad, setMensajesComunidad] = useState<any[]>([]);
+  const [mensajesComunidad, setMensajesComunidad] = useState<AvisoComunidad[]>([]);
   const [loadingMensajes, setLoadingMensajes] = useState(false);
   const [parametros, setParametros] = useState({
     sismos_24h: 45,

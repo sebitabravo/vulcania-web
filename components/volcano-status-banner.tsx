@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   AlertTriangle,
   Clock,
@@ -9,7 +9,7 @@ import {
   TrendingUp,
   Shield,
   X,
-  Users,
+
   AlertCircle,
   Volume2,
   VolumeX,
@@ -36,6 +36,7 @@ import {
   type AccionRequerida,
   type InformacionVolcan,
 } from "@/lib/supabase";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 // Extend Window interface for webkitAudioContext
 declare global {
@@ -54,9 +55,6 @@ interface VolcanoStatusComplete {
   informacion_volcan: InformacionVolcan;
 }
 
-interface VolcanoStatusBannerProps {
-  onOpenCommunity?: () => void;
-}
 
 const getIconComponent = (iconName: string) => {
   switch (iconName) {
@@ -147,9 +145,7 @@ const createAlertSound = (type: "naranja" | "rojo") => {
   }
 };
 
-export default function VolcanoStatusBanner({
-  onOpenCommunity,
-}: VolcanoStatusBannerProps) {
+export default function VolcanoStatusBanner() {
   const [volcanoData, setVolcanoData] = useState<VolcanoStatusComplete | null>(
     null
   );
@@ -242,7 +238,7 @@ export default function VolcanoStatusBanner({
   };
 
   // Función para reproducir sonido de alerta con repetición
-  const playAlertSound = (nivel: "naranja" | "rojo") => {
+  const playAlertSound = useCallback((nivel: "naranja" | "rojo") => {
     console.log("🎵 Reproduciendo sonido:", nivel);
     if (!soundEnabled) return;
 
@@ -277,22 +273,22 @@ export default function VolcanoStatusBanner({
       },
       nivel === "naranja" ? 1500 : 2000
     );
-  };
+  }, [alertDismissed, showCriticalAlert, soundEnabled, soundInterval]);
 
   // Función para detener sonido
-  const stopAlertSound = () => {
+  const stopAlertSound = useCallback(() => {
     if (soundInterval) {
       clearInterval(soundInterval);
       setSoundInterval(null);
     }
     setIsPlayingSound(false);
-  };
+  }, [soundInterval]);
 
   // Función para forzar emergencia
   const forceEmergency = () => {
     console.log("🚨 FORZANDO EMERGENCIA!");
     setEmergencyMode(true);
-    setVolcanoData(emergencyData as any);
+    setVolcanoData(emergencyData as VolcanoStatusComplete);
     setAlertDismissed(false);
     setShowCriticalAlert(true);
 
@@ -588,7 +584,7 @@ export default function VolcanoStatusBanner({
     loadVolcanoData();
 
     // Suscribirse a cambios en tiempo real solo si supabase está disponible
-    let subscription: any = null;
+    let subscription: RealtimeChannel | null = null;
 
     if (supabase) {
       subscription = supabase
@@ -616,7 +612,7 @@ export default function VolcanoStatusBanner({
       }
       stopAlertSound(); // Limpiar sonidos al desmontar
     };
-  }, [alertDismissed]);
+  }, [alertDismissed, playAlertSound, stopAlertSound]);
 
   // useEffect para manejar modo de emergencia
   useEffect(() => {
@@ -629,7 +625,7 @@ export default function VolcanoStatusBanner({
         playAlertSound("rojo");
       }, 1000);
     }
-  }, [emergencyMode, volcanoData]);
+  }, [emergencyMode, volcanoData, playAlertSound]);
 
   if (loading) {
     return (
@@ -649,7 +645,6 @@ export default function VolcanoStatusBanner({
     configuracion,
     recomendaciones,
     zona_exclusion,
-    acciones_requeridas,
     informacion_volcan,
   } = volcanoData;
   const IconComponent = getIconComponent(configuracion.icon_name);

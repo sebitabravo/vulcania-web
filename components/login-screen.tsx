@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mountain, Phone, ArrowRight } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { APP_CONFIG } from "@/lib/app-config";
+import { formatTelefonoInput, isValidChileanMobile } from "@/lib/phone-utils";
 
 export default function LoginScreen() {
   const [telefono, setTelefono] = useState("+56 9 "); // Siempre incluir el 9
@@ -28,39 +29,15 @@ export default function LoginScreen() {
       return;
     }
 
-    // Verificar que el número tenga el formato básico chileno móvil (+56 9...)
-    // Ser permisivo con espacios pero exigir el 9
-    const numeroLimpio = telefono.replace(/\s/g, ""); // Remover espacios
+    const validation = isValidChileanMobile(telefono);
 
-
-    // Validación básica: debe empezar con +569 (formato móvil chileno)
-    if (!numeroLimpio.startsWith("+569")) {
-      setError("Debe ser un número móvil chileno (+56 9...)");
-      phoneInput.setCustomValidity(
-        "Debe ser un número móvil chileno (+56 9...)"
-      );
+    if (!validation.valid) {
+      const message = validation.message || "Formato inválido";
+      setError(message);
+      phoneInput.setCustomValidity(message);
       phoneInput.reportValidity();
       return;
     }
-
-    // Debe tener al menos 10 caracteres (+569 + algunos dígitos)
-    if (numeroLimpio.length < 10) {
-      setError("El número es muy corto");
-      phoneInput.setCustomValidity("El número es muy corto");
-      phoneInput.reportValidity();
-      return;
-    }
-
-    // Validación permisiva: +56 9 seguido de números
-    const formatoMovil = /^\+56\s?9\s?[\d\s]+$/.test(telefono);
-
-    if (!formatoMovil) {
-      setError("Formato inválido. Use +56 9 seguido de números");
-      phoneInput.setCustomValidity("Formato inválido");
-      phoneInput.reportValidity();
-      return;
-    }
-
 
     setLoading(true);
     setError("");
@@ -78,76 +55,7 @@ export default function LoginScreen() {
     setLoading(false);
   };
   const formatTelefono = (value: string) => {
-
-    // Si el usuario está borrando, ser muy permisivo
-    if (value.length < telefono.length) {
-      // Solo intervenir si borra demasiado (hasta el prefijo base)
-      if (value.length <= 4 || !value.startsWith("+56")) {
-        return "+56 9 ";
-      }
-
-      return value; // Permitir edición libre
-    }
-
-    // Si es el mismo valor, no hacer nada (evita loops)
-    if (value === telefono) {
-      return value;
-    }
-
-
-    // Solo formatear cuando el usuario está agregando contenido
-    // Limpiar caracteres no válidos pero conservar estructura
-    let cleaned = value.replace(/[^\d+\s]/g, "");
-
-    // Si está completamente vacío, dar el formato base
-    if (!cleaned || cleaned === "+" || cleaned === "+5" || cleaned === "+56") {
-      return "+56 9 ";
-    }
-
-    // Si no empieza con +56, corregir automáticamente solo casos obvios
-    if (!cleaned.startsWith("+56")) {
-      if (/^\d/.test(cleaned)) {
-        // Si empieza con dígitos, asumir que van después del +56 9
-        cleaned = "+56 9 " + cleaned;
-      } else if (cleaned.startsWith("+")) {
-        cleaned = "+56 9 " + cleaned.slice(1);
-      }
-    }
-
-    // Asegurar formato básico pero sin ser muy agresivo
-    if (cleaned.startsWith("+56") && !cleaned.includes("9")) {
-      // Si tiene +56 pero no tiene 9, agregarlo
-      const afterCode = cleaned.substring(3).trim();
-      cleaned = "+56 9 " + afterCode;
-    }
-
-
-    // Aplicar formato de espacios suavemente
-    if (cleaned.startsWith("+56")) {
-      // Extraer solo los dígitos después de +56
-      const numerosPuros = cleaned
-        .replace(/^\+56\s?9?\s?/, "")
-        .replace(/\s/g, "");
-
-      // Construir el formato correcto
-      let result = "+56 9";
-
-      if (numerosPuros.length > 0) {
-        // Primeros 4 dígitos
-        const grupo1 = numerosPuros.slice(0, 4);
-        result += " " + grupo1;
-
-        // Siguientes 4 dígitos
-        if (numerosPuros.length > 4) {
-          const grupo2 = numerosPuros.slice(4, 8);
-          result += " " + grupo2;
-        }
-      }
-
-      return result;
-    }
-
-    return cleaned;
+    return formatTelefonoInput(value, telefono);
   };
 
   const handleDirectAccess = async () => {

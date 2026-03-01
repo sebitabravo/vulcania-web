@@ -322,6 +322,8 @@ pnpm doctor            # Diagnóstico automático Supabase + esquema
 
 ### 🩺 Diagnóstico Automático Recomendado
 
+> Para soporte mínimo del proyecto, revisa también `SUPPORT.md`.
+
 Antes de levantar el entorno productivo, ejecuta:
 
 ```bash

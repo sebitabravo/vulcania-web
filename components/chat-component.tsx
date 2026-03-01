@@ -11,6 +11,8 @@ import {
   ArrowLeft,
   Wifi,
   WifiOff,
+  ImagePlus,
+  X,
 } from "lucide-react";
 import {
   supabase,
@@ -21,6 +23,14 @@ import {
 import { APP_CONFIG } from "@/lib/app-config";
 import { DEMO_USUARIO } from "@/lib/demo-data";
 import { useAuth } from "@/contexts/auth-context";
+import { ensureNotificationPermission, notify } from "@/lib/browser-notifications";
+import { logger } from "@/lib/logger";
+import {
+  composeMessageWithImage,
+  fileToDataUrl,
+  isImageFile,
+  parseMessageMedia,
+} from "@/lib/message-media";
 
 const OFFLINE_USERS: Usuario[] = [
   DEMO_USUARIO,
@@ -48,6 +58,8 @@ export default function ChatComponent() {
   const [nuevoMensaje, setNuevoMensaje] = useState("");
   const [loading, setLoading] = useState(true);
   const [enviando, setEnviando] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [conectado, setConectado] = useState(true);
   const [conversacionesLeidas, setConversacionesLeidas] = useState<Set<string>>(
     new Set()
@@ -57,18 +69,12 @@ export default function ChatComponent() {
 
   // Solicitar permisos de notificación al montar el componente
   useEffect(() => {
-    if (typeof window !== "undefined" && "Notification" in window) {
-      if (Notification.permission === "default") {
-        Notification.requestPermission().then((permission) => {
-          console.log("📢 Permisos de notificación:", permission);
-        });
-      }
-    }
+    void ensureNotificationPermission();
   }, []);
 
   // Función para recargar estadísticas de conversaciones
   const recargarConversaciones = useCallback(async () => {
-    if (!supabase && APP_CONFIG.demoMode && usuario) {
+    if (APP_CONFIG.demoMode && usuario) {
       const data = OFFLINE_USERS
         .filter((u) => u.id !== usuario.id)
         .map((u) => ({
@@ -83,9 +89,9 @@ export default function ChatComponent() {
     if (!supabase || !usuario) return;
 
     try {
-      console.log("🔄 Recargando estadísticas de conversaciones...");
-      console.log("👤 Usuario actual:", usuario.id);
-      console.log(
+      logger.debug("🔄 Recargando estadísticas de conversaciones...");
+      logger.debug("👤 Usuario actual:", usuario.id);
+      logger.debug(
         "📖 Conversaciones marcadas como leídas:",
         Array.from(conversacionesLeidas)
       );
@@ -98,11 +104,11 @@ export default function ChatComponent() {
         .order("nombre");
 
       if (errorUsuarios || !todosUsuarios) {
-        console.error("Error cargando usuarios:", errorUsuarios);
+        logger.error("Error cargando usuarios:", errorUsuarios);
         return;
       }
 
-      console.log("👥 Usuarios encontrados:", todosUsuarios.length);
+      logger.debug("👥 Usuarios encontrados:", todosUsuarios.length);
 
       // Para cada usuario, obtener estadísticas de conversación
       const estadisticasPromises = todosUsuarios.map(async (otroUsuario) => {
@@ -120,7 +126,7 @@ export default function ChatComponent() {
           .maybeSingle();
 
         if (errorMensaje) {
-          console.error("Error obteniendo último mensaje:", errorMensaje);
+          logger.error("Error obteniendo último mensaje:", errorMensaje);
         }
 
         // Lógica simplificada para mensajes no leídos (solo estado local)
@@ -137,11 +143,11 @@ export default function ChatComponent() {
         ) {
           // Mostrar 1 mensaje no leído (sin hacer consultas adicionales a la DB)
           mensajesNoLeidos = 1;
-          console.log(
+          logger.debug(
             `📬 Usuario ${otroUsuario.nombre} tiene mensajes no leídos`
           );
         } else {
-          console.log(
+          logger.debug(
             `✅ Usuario ${otroUsuario.nombre} - sin mensajes no leídos`
           );
         }
@@ -173,10 +179,10 @@ export default function ChatComponent() {
         );
       });
 
-      console.log("📊 Estadísticas cargadas:", estadisticasOrdenadas);
+      logger.debug("📊 Estadísticas cargadas:", estadisticasOrdenadas);
       setConversaciones(estadisticasOrdenadas);
     } catch (error) {
-      console.error("Error recargando conversaciones:", error);
+      logger.error("Error recargando conversaciones:", error);
     }
   }, [usuario, conversacionesLeidas]);
 
@@ -189,7 +195,7 @@ export default function ChatComponent() {
 
   // Cargar mensajes y suscribirse a tiempo real
   useEffect(() => {
-    if (!supabase && APP_CONFIG.demoMode && usuarioSeleccionado) {
+    if (APP_CONFIG.demoMode && usuarioSeleccionado) {
       const demoMsgs: MensajeChat[] = [
         {
           id: "demo-msg-1",
@@ -231,20 +237,20 @@ export default function ChatComponent() {
           .order("fecha_envio", { ascending: true });
 
         if (error) {
-          console.error("Error cargando mensajes:", error);
+          logger.error("Error cargando mensajes:", error);
           return;
         }
 
         setMensajes(data || []);
       } catch (error) {
-        console.error("Error:", error);
+        logger.error("Error:", error);
       }
     };
 
     cargarMensajes();
 
     // Suscribirse a nuevos mensajes en tiempo real
-    console.log("🔄 Configurando suscripción en tiempo real para mensajes...");
+    logger.debug("🔄 Configurando suscripción en tiempo real para mensajes...");
 
     const subscription = supabase
       .channel(`mensajes_chat_${usuario.id}_${usuarioSeleccionado.id}`)
@@ -257,7 +263,7 @@ export default function ChatComponent() {
           filter: `or(and(emisor_id.eq.${usuario.id},receptor_id.eq.${usuarioSeleccionado.id}),and(emisor_id.eq.${usuarioSeleccionado.id},receptor_id.eq.${usuario.id}))`,
         },
         async (payload) => {
-          console.log("📨 Nuevo mensaje recibido en tiempo real:", payload);
+          logger.debug("📨 Nuevo mensaje recibido en tiempo real:", payload);
 
           const nuevoMensaje = payload.new as MensajeChat;
 
@@ -285,7 +291,7 @@ export default function ChatComponent() {
                 .single();
 
               if (!error && mensajeCompleto) {
-                console.log(
+                logger.debug(
                   "✅ Añadiendo mensaje en tiempo real:",
                   mensajeCompleto
                 );
@@ -294,7 +300,7 @@ export default function ChatComponent() {
                 setMensajes((prev) => {
                   const existe = prev.some((m) => m.id === mensajeCompleto.id);
                   if (existe) {
-                    console.log("⚠️ Mensaje ya existe, evitando duplicado");
+                    logger.debug("⚠️ Mensaje ya existe, evitando duplicado");
                     return prev;
                   }
 
@@ -303,37 +309,37 @@ export default function ChatComponent() {
                 });
               }
             } catch (error) {
-              console.error("❌ Error obteniendo mensaje completo:", error);
+              logger.error("❌ Error obteniendo mensaje completo:", error);
             }
           }
         }
       )
       .subscribe((status) => {
-        console.log("📡 Estado de suscripción:", status);
+        logger.debug("📡 Estado de suscripción:", status);
 
         // Actualizar estado de conexión basado en el status
         if (status === "SUBSCRIBED") {
           setConectado(true);
-          console.log("🟢 Conectado en tiempo real");
+          logger.debug("🟢 Conectado en tiempo real");
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           setConectado(false);
-          console.log("🔴 Error de conexión en tiempo real");
+          logger.debug("🔴 Error de conexión en tiempo real");
         }
       });
 
     return () => {
-      console.log("🔌 Desconectando suscripción en tiempo real");
+      logger.debug("🔌 Desconectando suscripción en tiempo real");
       subscription.unsubscribe();
     };
   }, [usuarioSeleccionado, usuario, recargarConversaciones]);
 
   // Suscripción global para escuchar TODOS los mensajes dirigidos al usuario actual
   useEffect(() => {
-    if (!supabase && APP_CONFIG.demoMode) return;
+    if (APP_CONFIG.demoMode) return;
 
     if (!usuario || !supabase) return;
 
-    console.log(
+    logger.debug(
       "🌐 Configurando suscripción global para mensajes dirigidos al usuario..."
     );
 
@@ -348,7 +354,7 @@ export default function ChatComponent() {
           filter: `receptor_id.eq.${usuario.id}`,
         },
         async (payload) => {
-          console.log("🌐 Nuevo mensaje global recibido:", payload);
+          logger.debug("🌐 Nuevo mensaje global recibido:", payload);
 
           const nuevoMensaje = payload.new as MensajeChat;
 
@@ -361,11 +367,10 @@ export default function ChatComponent() {
             setConversacionesLeidas((prev) => {
               const nuevasLeidas = new Set(prev);
               nuevasLeidas.delete(nuevoMensaje.emisor_id);
-              console.log(
-                `📬 Marcando conversación como no leída: ${nuevoMensaje.emisor_id}`
-              );
               return nuevasLeidas;
             });
+
+            notify("Nuevo mensaje", "Recibiste un mensaje en el chat comunitario");
 
             // Recargar conversaciones para actualizar el badge
             recargarConversaciones();
@@ -373,11 +378,11 @@ export default function ChatComponent() {
         }
       )
       .subscribe((status) => {
-        console.log("📡 Estado de suscripción global:", status);
+        logger.debug("📡 Estado de suscripción global:", status);
       });
 
     return () => {
-      console.log("🔌 Desconectando suscripción global");
+      logger.debug("🔌 Desconectando suscripción global");
       globalSubscription.unsubscribe();
     };
   }, [usuario, usuarioSeleccionado, recargarConversaciones]);
@@ -396,7 +401,7 @@ export default function ChatComponent() {
     // Marcar esta conversación como leída localmente
     setConversacionesLeidas((prev) => new Set(prev.add(user.id)));
 
-    console.log(
+    logger.debug(
       "📖 Marcando conversación como leída para usuario:",
       user.nombre
     );
@@ -404,46 +409,64 @@ export default function ChatComponent() {
 
   const enviarMensaje = async () => {
     if (APP_CONFIG.demoReadOnly) {
-      console.warn("Modo demo activo: chat en solo lectura");
+      logger.warn("Modo demo activo: chat en solo lectura");
       return;
     }
 
-    if (!nuevoMensaje.trim() || !usuario || !usuarioSeleccionado || !supabase)
+    if ((!nuevoMensaje.trim() && !imageFile) || !usuario || !usuarioSeleccionado || !supabase)
       return;
 
-    const mensajeTexto = nuevoMensaje.trim();
-    setNuevoMensaje(""); // Limpiar inmediatamente para mejor UX
+    const mensajeOriginal = nuevoMensaje.trim();
+    const fileOriginal = imageFile;
+    setNuevoMensaje("");
+    setImageFile(null);
+    setImagePreview(null);
     setEnviando(true);
 
     try {
-      const { data, error } = await supabase.from("mensajes_chat").insert([
-        {
-          emisor_id: usuario.id,
-          receptor_id: usuarioSeleccionado.id,
-          mensaje: mensajeTexto,
-        },
-      ]).select(`
-        *,
-        emisor:emisor_id (id, nombre),
-        receptor:receptor_id (id, nombre)
-      `);
+      let imageUrl: string | undefined;
+
+      if (fileOriginal) {
+        imageUrl = await fileToDataUrl(fileOriginal);
+      }
+
+      const mensajeTexto = composeMessageWithImage(mensajeOriginal, imageUrl);
+
+      const { data, error } = await supabase
+        .from("mensajes_chat")
+        .insert([
+          {
+            emisor_id: usuario.id,
+            receptor_id: usuarioSeleccionado.id,
+            mensaje: mensajeTexto,
+          },
+        ])
+        .select(`
+          *,
+          emisor:emisor_id (id, nombre),
+          receptor:receptor_id (id, nombre)
+        `);
 
       if (error) {
-        console.error("Error enviando mensaje:", error);
-        setNuevoMensaje(mensajeTexto); // Restaurar mensaje si hay error
+        logger.error("Error enviando mensaje:", error);
+        setNuevoMensaje(mensajeOriginal);
+        setImageFile(fileOriginal ?? null);
+        setImagePreview(fileOriginal ? await fileToDataUrl(fileOriginal) : null);
         return;
       }
 
-      // Agregar el nuevo mensaje inmediatamente al estado local
       if (data && data[0]) {
         setMensajes((prev) => [...prev, data[0]]);
       }
 
-      // Recargar conversaciones para actualizar último mensaje
       recargarConversaciones();
     } catch (error) {
-      console.error("Error:", error);
-      setNuevoMensaje(mensajeTexto); // Restaurar mensaje si hay error
+      logger.error("Error:", error);
+      setNuevoMensaje(mensajeOriginal);
+      setImageFile(fileOriginal ?? null);
+      if (fileOriginal) {
+        setImagePreview(await fileToDataUrl(fileOriginal));
+      }
     } finally {
       setEnviando(false);
     }
@@ -459,7 +482,7 @@ export default function ChatComponent() {
 
   // Función para resetear el estado de conversaciones leídas (útil para debugging)
   const resetearEstadoLeido = () => {
-    console.log("🔄 Reseteando estado de conversaciones leídas...");
+    logger.debug("🔄 Reseteando estado de conversaciones leídas...");
     setConversacionesLeidas(new Set());
     recargarConversaciones();
   };
@@ -627,6 +650,7 @@ export default function ChatComponent() {
               <div className="space-y-4">
                 {mensajes.map((mensaje) => {
                   const esMio = mensaje.emisor_id === usuario?.id;
+                  const { text, imageUrl } = parseMessageMedia(mensaje.mensaje);
                   return (
                     <div
                       key={mensaje.id}
@@ -641,7 +665,15 @@ export default function ChatComponent() {
                             : "bg-gray-800 text-gray-200"
                         }`}
                       >
-                        <p className="text-sm">{mensaje.mensaje}</p>
+                        {text ? <p className="text-sm">{text}</p> : null}
+                        {imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={imageUrl}
+                            alt="Imagen compartida"
+                            className="mt-2 rounded-md max-h-56 w-auto border border-white/20"
+                          />
+                        ) : null}
                         <p
                           className={`text-xs mt-1 ${
                             esMio ? "text-green-200" : "text-gray-500"
@@ -670,7 +702,41 @@ export default function ChatComponent() {
         )}
       </div>
 
-      <div className="flex space-x-2">
+      {imagePreview ? (
+        <div className="relative w-fit">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={imagePreview} alt="Vista previa" className="max-h-44 rounded-md border border-gray-700" />
+          <button
+            type="button"
+            className="absolute -top-2 -right-2 bg-black/80 text-white rounded-full p-1"
+            onClick={() => {
+              setImageFile(null);
+              setImagePreview(null);
+            }}
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      ) : null}
+
+      <div className="flex space-x-2 items-center">
+        <label className="cursor-pointer inline-flex items-center justify-center h-10 w-10 rounded-md border border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700">
+          <ImagePlus className="h-4 w-4" />
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={enviando || APP_CONFIG.demoReadOnly}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              if (!isImageFile(file)) return;
+              setImageFile(file);
+              setImagePreview(await fileToDataUrl(file));
+            }}
+          />
+        </label>
+
         <Input
           placeholder="Escribe un mensaje..."
           value={nuevoMensaje}
@@ -681,7 +747,7 @@ export default function ChatComponent() {
         />
         <Button
           onClick={enviarMensaje}
-          disabled={!nuevoMensaje.trim() || enviando || APP_CONFIG.demoReadOnly}
+          disabled={(!nuevoMensaje.trim() && !imageFile) || enviando || APP_CONFIG.demoReadOnly}
           className="bg-green-600 hover:bg-green-700 text-white px-6"
         >
           {enviando ? (

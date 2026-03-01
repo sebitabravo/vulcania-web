@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import { logger } from "@/lib/logger"
 
 // Verificar variables de entorno requeridas
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -13,12 +14,12 @@ if (!supabaseUrl || !supabaseAnonKey) {
   if (!supabaseAnonKey) missingVars.push('NEXT_PUBLIC_SUPABASE_ANON_KEY')
 
   if (demoMode) {
-    console.log(
+    logger.info(
       'ℹ️ Supabase no configurado (esperado en modo demo):',
       missingVars.join(', ')
     )
   } else {
-    console.warn(
+    logger.warn(
       '⚠️ Supabase no configurado. La app iniciará en modo limitado/demo:',
       missingVars.join(', ')
     )

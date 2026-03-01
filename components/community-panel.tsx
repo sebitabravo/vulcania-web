@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, Send, MessageCircle, Clock } from "lucide-react";
+import { Users, Send, MessageCircle, Clock, ImagePlus, X } from "lucide-react";
 import {
   supabase,
   isSupabaseConfigured,
@@ -14,30 +14,35 @@ import {
 import { APP_CONFIG } from "@/lib/app-config";
 import { DEMO_AVISOS } from "@/lib/demo-data";
 import { useAuth } from "@/contexts/auth-context";
+import { ensureNotificationPermission, notify } from "@/lib/browser-notifications";
+import { logger } from "@/lib/logger";
+import {
+  composeMessageWithImage,
+  fileToDataUrl,
+  isImageFile,
+  parseMessageMedia,
+} from "@/lib/message-media";
 
 export default function CommunityPanel() {
   const [avisos, setAvisos] = useState<AvisoComunidad[]>([]);
   const [nuevoMensaje, setNuevoMensaje] = useState("");
   const [loading, setLoading] = useState(true);
   const [enviando, setEnviando] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const { usuario } = useAuth();
 
-  // DEBUG: Log del estado del usuario
   useEffect(() => {
-    console.log("🔧 Estado del usuario en CommunityPanel:", {
-      usuario,
-      hasId: usuario?.id,
-      isConfigured: isSupabaseConfigured(),
-    });
-  }, [usuario]);
+    void ensureNotificationPermission();
+  }, []);
 
   // Verificar configuración de Supabase
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       if (APP_CONFIG.demoMode) {
-        console.log("ℹ️ Supabase no configurado, usando modo demo offline");
+        logger.debug("ℹ️ Supabase no configurado, usando modo demo offline");
       } else {
-        console.error("❌ Supabase no está configurado correctamente");
+        logger.error("❌ Supabase no está configurado correctamente");
       }
       setLoading(false);
       return;
@@ -45,14 +50,14 @@ export default function CommunityPanel() {
   }, []);
 
   const cargarAvisos = async () => {
-    if (!supabase && APP_CONFIG.demoMode) {
+    if (APP_CONFIG.demoMode) {
       setAvisos(DEMO_AVISOS);
       setLoading(false);
       return;
     }
 
     if (!supabase) {
-      console.error("❌ No se puede cargar avisos: Supabase no configurado");
+      logger.error("❌ No se puede cargar avisos: Supabase no configurado");
       setLoading(false);
       return;
     }
@@ -75,27 +80,27 @@ export default function CommunityPanel() {
         .limit(20);
 
       if (error) {
-        console.error("Error cargando avisos:", error);
+        logger.error("Error cargando avisos:", error);
         return;
       }
 
       setAvisos(data || []);
     } catch (error) {
-      console.error("Error:", error);
+      logger.error("Error:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (!supabase && APP_CONFIG.demoMode) {
+    if (APP_CONFIG.demoMode) {
       setAvisos(DEMO_AVISOS);
       setLoading(false);
       return;
     }
 
     if (!supabase) {
-      console.error(
+      logger.error(
         "❌ No se puede configurar suscripción: Supabase no configurado"
       );
       setLoading(false);
@@ -111,6 +116,7 @@ export default function CommunityPanel() {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "avisos_comunidad" },
         () => {
+          notify("Nuevo aviso comunitario", "Se publicó un nuevo mensaje en la comunidad");
           if (supabase) {
             cargarAvisos();
           }
@@ -125,35 +131,33 @@ export default function CommunityPanel() {
 
   const enviarAviso = async () => {
     if (APP_CONFIG.demoReadOnly) {
-      console.warn("Modo demo activo: envío de avisos bloqueado");
+      logger.warn("Modo demo activo: envío de avisos bloqueado");
       return;
     }
 
-    if (!nuevoMensaje.trim() || !usuario) {
-      console.warn(
-        "No se puede enviar: mensaje vacío o usuario no autenticado"
-      );
+    if ((!nuevoMensaje.trim() && !imageFile) || !usuario) {
+      logger.warn("No se puede enviar: mensaje vacío o usuario no autenticado");
       return;
     }
 
     if (!supabase) {
-      console.error("❌ No se puede enviar aviso: Supabase no configurado");
+      logger.error("❌ No se puede enviar aviso: Supabase no configurado");
       return;
     }
 
     if (!usuario.id) {
-      console.error("❌ No se puede enviar aviso: Usuario sin ID");
+      logger.error("❌ No se puede enviar aviso: Usuario sin ID");
       return;
     }
 
-    console.log("Enviando aviso:", {
+    logger.debug("Enviando aviso:", {
       usuario_id: usuario.id,
       mensaje: nuevoMensaje.trim(),
       usuario: usuario,
     });
 
     // VERIFICAR que el usuario existe en la base de datos
-    console.log("🔍 Verificando usuario en base de datos...");
+    logger.debug("🔍 Verificando usuario en base de datos...");
     try {
       const { data: usuarioVerificado, error: errorVerificacion } =
         await supabase
@@ -163,7 +167,7 @@ export default function CommunityPanel() {
           .single();
 
       if (errorVerificacion || !usuarioVerificado) {
-        console.error("❌ Usuario no encontrado en base de datos:", {
+        logger.error("❌ Usuario no encontrado en base de datos:", {
           usuario_id: usuario.id,
           error: errorVerificacion,
         });
@@ -180,17 +184,27 @@ export default function CommunityPanel() {
         return;
       }
 
-      console.log("✅ Usuario verificado en base de datos:", usuarioVerificado);
+      logger.debug("✅ Usuario verificado en base de datos:", usuarioVerificado);
     } catch (verificationError) {
-      console.error("❌ Error verificando usuario:", verificationError);
+      logger.error("❌ Error verificando usuario:", verificationError);
       return;
     }
 
-    const mensajeTexto = nuevoMensaje.trim();
-    setNuevoMensaje(""); // Limpiar inmediatamente para mejor UX
+    const mensajeOriginal = nuevoMensaje.trim();
+    const fileOriginal = imageFile;
+    setNuevoMensaje("");
+    setImageFile(null);
+    setImagePreview(null);
     setEnviando(true);
 
     try {
+      let imageUrl: string | undefined;
+      if (fileOriginal) {
+        imageUrl = await fileToDataUrl(fileOriginal);
+      }
+
+      const mensajeTexto = composeMessageWithImage(mensajeOriginal, imageUrl);
+
       const { data, error } = await supabase.from("avisos_comunidad").insert([
         {
           usuario_id: usuario.id,
@@ -207,14 +221,16 @@ export default function CommunityPanel() {
       `);
 
       if (error) {
-        console.error("Error enviando aviso:", error);
-        console.error("Detalles del error:", {
+        logger.error("Error enviando aviso:", error);
+        logger.error("Detalles del error:", {
           message: error.message,
           details: error.details,
           hint: error.hint,
           code: error.code,
         });
-        setNuevoMensaje(mensajeTexto); // Restaurar mensaje si hay error
+        setNuevoMensaje(mensajeOriginal);
+        setImageFile(fileOriginal ?? null);
+        setImagePreview(fileOriginal ? await fileToDataUrl(fileOriginal) : null);
         return;
       }
 
@@ -223,8 +239,12 @@ export default function CommunityPanel() {
         setAvisos((prev) => [data[0], ...prev]);
       }
     } catch (error) {
-      console.error("Error:", error);
-      setNuevoMensaje(mensajeTexto); // Restaurar mensaje si hay error
+      logger.error("Error:", error);
+      setNuevoMensaje(mensajeOriginal);
+      setImageFile(fileOriginal ?? null);
+      if (fileOriginal) {
+        setImagePreview(await fileToDataUrl(fileOriginal));
+      }
     } finally {
       setEnviando(false);
     }
@@ -304,14 +324,47 @@ export default function CommunityPanel() {
             maxLength={500}
             disabled={!isSupabaseConfigured() || APP_CONFIG.demoReadOnly}
           />
-          <div className="flex items-center justify-between">
-            <span className="text-gray-500 text-sm">
-              {nuevoMensaje.length}/500 caracteres
-            </span>
+          {imagePreview ? (
+            <div className="relative w-fit">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imagePreview} alt="Vista previa" className="max-h-44 rounded-md border border-gray-700" />
+              <button
+                type="button"
+                className="absolute -top-2 -right-2 bg-black/80 text-white rounded-full p-1"
+                onClick={() => {
+                  setImageFile(null);
+                  setImagePreview(null);
+                }}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : null}
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <label className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-md border border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700">
+                <ImagePlus className="h-4 w-4" />
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={!isSupabaseConfigured() || APP_CONFIG.demoReadOnly || enviando}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (!isImageFile(file)) return;
+                    setImageFile(file);
+                    setImagePreview(await fileToDataUrl(file));
+                  }}
+                />
+              </label>
+              <span className="text-gray-500 text-sm">{nuevoMensaje.length}/500 caracteres</span>
+            </div>
             <Button
               onClick={enviarAviso}
               disabled={
-                !nuevoMensaje.trim() ||
+                (!nuevoMensaje.trim() && !imageFile) ||
                 enviando ||
                 !isSupabaseConfigured() ||
                 APP_CONFIG.demoReadOnly
@@ -359,7 +412,8 @@ export default function CommunityPanel() {
           </div>
         ) : (
           avisos.map((aviso) => {
-            const tipoMensaje = getTipoMensaje(aviso.mensaje);
+            const { text, imageUrl } = parseMessageMedia(aviso.mensaje);
+            const tipoMensaje = getTipoMensaje(text || aviso.mensaje);
             return (
               <Card key={aviso.id} className="bg-gray-900 border-gray-800">
                 <CardContent className="p-4">
@@ -399,9 +453,17 @@ export default function CommunityPanel() {
                         : "Info"}
                     </Badge>
                   </div>
-                  <p className="text-gray-300 leading-relaxed">
-                    {aviso.mensaje}
-                  </p>
+                  {text ? (
+                    <p className="text-gray-300 leading-relaxed">{text}</p>
+                  ) : null}
+                  {imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={imageUrl}
+                      alt="Imagen comunitaria"
+                      className="mt-3 rounded-md border border-gray-700 max-h-72 w-auto"
+                    />
+                  ) : null}
                 </CardContent>
               </Card>
             );

@@ -335,6 +335,20 @@ Esto valida:
 - estado básico de permisos,
 - estado de audio de alertas (auto-unlock habilitado).
 
+### ⚡ Troubleshooting Rápido
+
+- **Credenciales inválidas / conexión fallida**:
+  - Ejecuta `pnpm validate-env` y luego `pnpm doctor`.
+  - Si persiste, regenera claves en Supabase Dashboard → Settings → API.
+
+- **Permisos/RLS**:
+  - Ejecuta `scripts/init.sql` completo en Supabase SQL Editor.
+  - Repite `pnpm doctor` para confirmar.
+
+- **Sin sonido en alertas**:
+  - Interactúa una vez con la página (click/tecla).
+  - La app aplica auto-unlock de audio en el primer gesto del usuario.
+
 ---
 
 ## 🤝 Contribución

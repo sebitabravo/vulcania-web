@@ -15,6 +15,10 @@ const requiredTables = [
   'avisos_comunidad',
 ]
 
+function isDemoMode(): boolean {
+  return (process.env.NEXT_PUBLIC_DEMO_MODE || '').toLowerCase() === 'true'
+}
+
 function fail(msg: string): never {
   console.error(`❌ ${msg}`)
   process.exit(1)
@@ -24,6 +28,12 @@ async function main() {
   console.log('🩺 Vulcania Doctor: iniciando diagnóstico...\n')
 
   if (!url || !anon) {
+    if (isDemoMode()) {
+      console.log('ℹ️ Modo demo detectado: se omite validación de Supabase (esto es esperado).')
+      console.log('✅ Diagnóstico completado para modo demo')
+      return
+    }
+
     fail('Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY. Ejecuta: pnpm run validate-env')
   }
 
@@ -43,6 +53,9 @@ async function main() {
     if (/permission denied|policy|rls/i.test(msg)) {
       fail('Permisos/RLS bloqueando acceso. Revisa políticas en scripts/init.sql y vuelve a ejecutar.')
     }
+    if (/fetch failed|network|timeout|ENOTFOUND|ECONNREFUSED|503|504/i.test(msg)) {
+      fail('No se pudo conectar a Supabase (red/servicio temporalmente no disponible). Reintenta y verifica estado del servicio.')
+    }
 
     fail(`Conexión fallida con Supabase: ${msg}`)
   }
@@ -57,6 +70,13 @@ async function main() {
       if (/relation .* does not exist|schema cache/i.test(msg)) {
         fail(`Tabla faltante: ${table}. Ejecuta scripts/init.sql completo.`)
       }
+      if (/permission denied|policy|rls/i.test(msg)) {
+        fail(`Permisos/RLS bloqueando tabla ${table}. Revisa políticas y permisos en Supabase.`)
+      }
+      if (/fetch failed|network|timeout|ENOTFOUND|ECONNREFUSED|503|504/i.test(msg)) {
+        fail(`Error de red validando tabla ${table}. Reintenta y verifica conectividad.`)
+      }
+      fail(`Error validando tabla ${table}: ${msg}`)
     }
   }
   console.log('✅ Tablas principales detectadas')

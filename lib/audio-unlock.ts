@@ -27,6 +27,11 @@ export function setupAudioUnlock() {
       unlocked = true
       window.removeEventListener('pointerdown', unlock)
       window.removeEventListener('keydown', unlock)
+
+      // Cerrar el contexto para no dejar recursos abiertos
+      setTimeout(() => {
+        void ctx.close()
+      }, 20)
     } catch {
       // no-op
     }

@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { supabase, type PuntoEncuentro } from "@/lib/supabase";
 import { APP_CONFIG } from "@/lib/app-config";
 import { DEMO_PUNTOS_ENCUENTRO } from "@/lib/demo-data";
+import { logger } from "@/lib/logger";
 
 // Componente que solo se renderiza en el cliente
 function InteractiveMapClient() {
@@ -70,7 +71,7 @@ function InteractiveMapClient() {
       link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
       link.crossOrigin = "";
       link.onload = () => {
-        console.log("✅ Leaflet CSS cargado correctamente");
+        logger.debug("✅ Leaflet CSS cargado correctamente");
 
         // Agregar más CSS específico después de cargar
         const additionalStyle = document.createElement("style");
@@ -85,15 +86,15 @@ function InteractiveMapClient() {
         `;
         document.head.appendChild(additionalStyle);
       };
-      link.onerror = () => console.error("❌ Error cargando Leaflet CSS");
+      link.onerror = () => logger.error("❌ Error cargando Leaflet CSS");
       document.head.appendChild(link);
     }
   }, []);
 
   useEffect(() => {
     const cargarDatos = async () => {
-      console.log("🔄 Iniciando carga de datos...");
-      console.log("🌍 Environment:", {
+      logger.debug("🔄 Iniciando carga de datos...");
+      logger.debug("🌍 Environment:", {
         nodeEnv: process.env.NODE_ENV,
         supabaseConfigured: !!supabase,
         windowExists: typeof window !== "undefined",
@@ -107,8 +108,8 @@ function InteractiveMapClient() {
             return;
           }
 
-          console.error("❌ Supabase no está configurado");
-          console.log("🔍 Variables de entorno disponibles:", {
+          logger.error("❌ Supabase no está configurado");
+          logger.debug("🔍 Variables de entorno disponibles:", {
             hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
             hasSupabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
             supabaseUrl:
@@ -117,18 +118,18 @@ function InteractiveMapClient() {
           return;
         }
 
-        console.log("✅ Supabase configurado correctamente");
+        logger.debug("✅ Supabase configurado correctamente");
 
         // Verificar conexión a Supabase primero
-        console.log("🔍 Verificando conexión a Supabase...");
+        logger.debug("🔍 Verificando conexión a Supabase...");
         const { error: testError } = await supabase
           .from("puntos_encuentro")
           .select("count")
           .limit(1);
 
         if (testError) {
-          console.error("❌ Error de conexión a Supabase:", testError);
-          console.log("🔍 Detalles del error:", {
+          logger.error("❌ Error de conexión a Supabase:", testError);
+          logger.debug("🔍 Detalles del error:", {
             message: testError.message,
             details: testError.details,
             hint: testError.hint,
@@ -137,34 +138,34 @@ function InteractiveMapClient() {
           return;
         }
 
-        console.log("✅ Conexión a Supabase exitosa");
+        logger.debug("✅ Conexión a Supabase exitosa");
 
         // Cargar puntos de encuentro
-        console.log("📍 Cargando puntos de encuentro...");
+        logger.debug("📍 Cargando puntos de encuentro...");
         const { data: puntos, error: errorPuntos } = await supabase
           .from("puntos_encuentro")
           .select("*");
 
-        console.log("🔍 Resultado de la consulta:", {
+        logger.debug("🔍 Resultado de la consulta:", {
           error: errorPuntos,
           dataLength: puntos?.length,
           data: puntos,
         });
 
         if (errorPuntos) {
-          console.error("❌ Error cargando puntos:", errorPuntos);
-          console.log("🔍 Detalles del error de puntos:", {
+          logger.error("❌ Error cargando puntos:", errorPuntos);
+          logger.debug("🔍 Detalles del error de puntos:", {
             message: errorPuntos.message,
             details: errorPuntos.details,
             hint: errorPuntos.hint,
             code: errorPuntos.code,
           });
         } else {
-          console.log(
+          logger.debug(
             `✅ Puntos cargados exitosamente: ${puntos?.length || 0} puntos`
           );
           if (puntos && puntos.length > 0) {
-            console.log(
+            logger.debug(
               "📍 Puntos encontrados:",
               puntos.map((p) => ({
                 id: p.id,
@@ -177,10 +178,10 @@ function InteractiveMapClient() {
           setPuntosEncuentro(puntos || []);
         }
       } catch (error) {
-        console.error("❌ Error general en cargarDatos:", error);
-        console.log("🔍 Stack trace:", error);
+        logger.error("❌ Error general en cargarDatos:", error);
+        logger.debug("🔍 Stack trace:", error);
       } finally {
-        console.log("🏁 Finalizando carga de datos, loading = false");
+        logger.debug("🏁 Finalizando carga de datos, loading = false");
         setLoading(false);
       }
     };
@@ -198,7 +199,7 @@ function InteractiveMapClient() {
     ) {
       // Importar Leaflet dinámicamente
       import("leaflet").then((L) => {
-        console.log("📍 Configurando iconos de Leaflet...");
+        logger.debug("📍 Configurando iconos de Leaflet...");
 
         // Configurar iconos por defecto con URLs más confiables
         delete (
@@ -216,7 +217,7 @@ function InteractiveMapClient() {
             "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
         });
 
-        console.log("✅ Iconos de Leaflet configurados correctamente");
+        logger.debug("✅ Iconos de Leaflet configurados correctamente");
 
         // Crear el mapa centrado en la ubicación seleccionada
         let centerLat = -39.3167;
@@ -245,7 +246,7 @@ function InteractiveMapClient() {
 
         // Verificar que el contenedor del mapa existe y está vacío
         if (!mapRef.current) {
-          console.error("Map container not found");
+          logger.error("Map container not found");
           return;
         }
 
@@ -262,17 +263,17 @@ function InteractiveMapClient() {
         // Invalidar el tamaño del mapa múltiples veces para asegurar renderizado correcto
         setTimeout(() => {
           map.invalidateSize(true);
-          console.log("🗺️ Primera invalidación de tamaño");
+          logger.debug("🗺️ Primera invalidación de tamaño");
         }, 50);
 
         setTimeout(() => {
           map.invalidateSize(true);
-          console.log("🗺️ Segunda invalidación de tamaño");
+          logger.debug("🗺️ Segunda invalidación de tamaño");
         }, 200);
 
         setTimeout(() => {
           map.invalidateSize(true);
-          console.log("🗺️ Tercera invalidación de tamaño");
+          logger.debug("🗺️ Tercera invalidación de tamaño");
         }, 500);
 
         // Guardar referencia del mapa
@@ -309,7 +310,7 @@ function InteractiveMapClient() {
         // Agregar capa base por defecto con evento de carga
         const defaultLayer = baseMaps["OpenStreetMap"];
         defaultLayer.on("load", () => {
-          console.log("✅ Tiles de mapa cargados");
+          logger.debug("✅ Tiles de mapa cargados");
           map.invalidateSize(true);
         });
         defaultLayer.addTo(map);
@@ -339,7 +340,7 @@ function InteractiveMapClient() {
 
         // Marcar que el mapa está completamente listo después de un breve delay
         setTimeout(() => {
-          console.log(
+          logger.debug(
             "🎉 Mapa completamente inicializado y listo para marcadores"
           );
           setMapReady(true);
@@ -350,8 +351,8 @@ function InteractiveMapClient() {
 
   // Actualizar marcadores cuando cambien los puntos de encuentro Y el mapa esté listo
   useEffect(() => {
-    console.log("🗺️ useEffect de marcadores activado");
-    console.log("🗺️ Estado actual:", {
+    logger.debug("🗺️ useEffect de marcadores activado");
+    logger.debug("🗺️ Estado actual:", {
       mapInstance: !!mapInstanceRef.current,
       mapReady: mapReady,
       mapContainer: mapInstanceRef.current?.getContainer() ? "sí" : "no",
@@ -361,7 +362,7 @@ function InteractiveMapClient() {
     });
 
     if (puntosEncuentro.length > 0) {
-      console.log(
+      logger.debug(
         "📍 Puntos disponibles para marcadores:",
         puntosEncuentro.map((p) => ({
           id: p.id,
@@ -375,18 +376,18 @@ function InteractiveMapClient() {
 
     // Solo crear marcadores si el mapa está listo Y tenemos puntos
     if (mapReady && mapInstanceRef.current && puntosEncuentro.length > 0) {
-      console.log("✅ Todas las condiciones cumplidas - creando marcadores");
-      console.log(
+      logger.debug("✅ Todas las condiciones cumplidas - creando marcadores");
+      logger.debug(
         `📍 Iniciando creación de ${puntosEncuentro.length} marcadores`
       );
 
       import("leaflet")
         .then((L) => {
-          console.log("📦 Leaflet importado exitosamente para marcadores");
+          logger.debug("📦 Leaflet importado exitosamente para marcadores");
 
           // Agregar marcadores de puntos de encuentro con iconos personalizados
           puntosEncuentro.forEach((punto, index) => {
-            console.log(
+            logger.debug(
               `🎯 Procesando marcador ${index + 1}/${puntosEncuentro.length}:`,
               {
                 nombre: punto.nombre,
@@ -399,7 +400,7 @@ function InteractiveMapClient() {
 
             // Validar coordenadas
             if (!punto.latitud || !punto.longitud) {
-              console.error(`❌ Coordenadas inválidas para ${punto.nombre}:`, {
+              logger.error(`❌ Coordenadas inválidas para ${punto.nombre}:`, {
                 lat: punto.latitud,
                 lng: punto.longitud,
               });
@@ -410,7 +411,7 @@ function InteractiveMapClient() {
               Math.abs(punto.latitud) > 90 ||
               Math.abs(punto.longitud) > 180
             ) {
-              console.error(
+              logger.error(
                 `❌ Coordenadas fuera de rango para ${punto.nombre}:`,
                 {
                   lat: punto.latitud,
@@ -433,7 +434,7 @@ function InteractiveMapClient() {
               color = "#3b82f6"; // Azul para nivel máximo
             }
 
-            console.log(`🎨 Estilo del marcador ${index + 1}:`, {
+            logger.debug(`🎨 Estilo del marcador ${index + 1}:`, {
               color,
               borderColor,
             });
@@ -446,19 +447,19 @@ function InteractiveMapClient() {
             });
 
             try {
-              console.log(
+              logger.debug(
                 `📌 Creando marcador L.marker para ${punto.nombre}...`
               );
               const marker = L.marker([punto.latitud, punto.longitud], {
                 icon: meetingIcon,
               });
 
-              console.log(
+              logger.debug(
                 `🗺️ Añadiendo marcador al mapa para ${punto.nombre}...`
               );
               marker.addTo(mapInstanceRef.current!);
 
-              console.log(`💬 Configurando popup para ${punto.nombre}...`);
+              logger.debug(`💬 Configurando popup para ${punto.nombre}...`);
               marker.bindPopup(`
               <div style="color: #1f2937; font-weight: 500; min-width: 220px; text-align: center;">
                 <strong style="color: #1f2937; font-size: 16px; display: block; margin-bottom: 6px;">${
@@ -587,17 +588,17 @@ function InteractiveMapClient() {
               </div>
             `);
 
-              console.log(
+              logger.debug(
                 `✅ Marcador ${index + 1} creado exitosamente para ${
                   punto.nombre
                 }`
               );
             } catch (markerError) {
-              console.error(
+              logger.error(
                 `❌ Error creando marcador ${index + 1} para ${punto.nombre}:`,
                 markerError
               );
-              console.log("🔍 Detalles del error de marcador:", {
+              logger.debug("🔍 Detalles del error de marcador:", {
                 errorMessage:
                   markerError instanceof Error
                     ? markerError.message
@@ -608,7 +609,7 @@ function InteractiveMapClient() {
             }
           });
 
-          console.log(
+          logger.debug(
             `🎉 Proceso de creación de marcadores completado - ${puntosEncuentro.length} puntos procesados`
           );
 
@@ -616,20 +617,20 @@ function InteractiveMapClient() {
           setTimeout(() => {
             if (mapInstanceRef.current) {
               mapInstanceRef.current.invalidateSize(true);
-              console.log(
+              logger.debug(
                 "🗺️ Tamaño del mapa invalidado después de añadir marcadores"
               );
             }
           }, 100);
         })
         .catch((leafletError) => {
-          console.error(
+          logger.error(
             "❌ Error importando Leaflet para marcadores:",
             leafletError
           );
         });
     } else {
-      console.log("⏳ Marcadores no creados - esperando condiciones:", {
+      logger.debug("⏳ Marcadores no creados - esperando condiciones:", {
         mapExists: !!mapInstanceRef.current,
         mapReady: mapReady,
         puntosCount: puntosEncuentro.length,
@@ -655,7 +656,7 @@ function InteractiveMapClient() {
   }, []);
 
   const cambiarUbicacion = (ubicacion: string) => {
-    console.log(`🗺️ Cambiando ubicación a: ${ubicacion}`);
+    logger.debug(`🗺️ Cambiando ubicación a: ${ubicacion}`);
     setUbicacionSeleccionada(ubicacion);
 
     // Resetear el estado de mapa listo para forzar re-creación de marcadores
@@ -684,7 +685,7 @@ function InteractiveMapClient() {
 
       // Marcar el mapa como listo nuevamente después del cambio de vista
       setTimeout(() => {
-        console.log(
+        logger.debug(
           `🎯 Mapa reposicionado a ${ubicacion} y listo para marcadores`
         );
         setMapReady(true);

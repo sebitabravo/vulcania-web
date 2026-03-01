@@ -23,6 +23,7 @@ import {
   type AvisoComunidad,
 } from "@/lib/supabase";
 import { APP_CONFIG } from "@/lib/app-config";
+import { logger } from "@/lib/logger";
 
 interface AdminPanelProps {
   onClose: () => void;
@@ -98,7 +99,7 @@ export default function AdminPanel({
         setCurrentLevel(data.nivel_alerta);
       }
     } catch (error) {
-      console.error("Error cargando nivel actual:", error);
+      logger.error("Error cargando nivel actual:", error);
     }
   };
 
@@ -115,7 +116,7 @@ export default function AdminPanel({
         setPuntosEncuentro(data);
       }
     } catch (error) {
-      console.error("Error cargando puntos de encuentro:", error);
+      logger.error("Error cargando puntos de encuentro:", error);
     }
   };
 
@@ -143,7 +144,7 @@ export default function AdminPanel({
         setMensajesComunidad(data);
       }
     } catch (error) {
-      console.error("Error cargando mensajes de la comunidad:", error);
+      logger.error("Error cargando mensajes de la comunidad:", error);
     }
   };
 
@@ -168,16 +169,16 @@ export default function AdminPanel({
         .eq("id", mensajeId);
 
       if (error) {
-        console.error("Error eliminando mensaje:", error);
+        logger.error("Error eliminando mensaje:", error);
         alert("Error al eliminar el mensaje");
         return;
       }
 
       // Recargar mensajes
       await cargarMensajesComunidad();
-      console.log("✅ Mensaje eliminado correctamente");
+      logger.debug("✅ Mensaje eliminado correctamente");
     } catch (error) {
-      console.error("Error:", error);
+      logger.error("Error:", error);
       alert("Error al eliminar el mensaje");
     } finally {
       setLoadingMensajes(false);
@@ -206,7 +207,7 @@ export default function AdminPanel({
     if (!supabase) return;
 
     if (!puntoId) {
-      console.error("ID de punto no válido");
+      logger.error("ID de punto no válido");
       return;
     }
 
@@ -218,7 +219,7 @@ export default function AdminPanel({
         .eq("id", puntoId);
 
       if (error) {
-        console.error("Error en Supabase:", error);
+        logger.error("Error en Supabase:", error);
         throw error;
       }
 
@@ -226,7 +227,7 @@ export default function AdminPanel({
       await cargarPuntosEncuentro();
       onAlertChange?.(); // Notificar cambio para refrescar el mapa
     } catch (error) {
-      console.error("Error cambiando estado del punto:", error);
+      logger.error("Error cambiando estado del punto:", error);
     } finally {
       setLoadingPuntos(false);
     }
@@ -249,14 +250,14 @@ export default function AdminPanel({
         .gte("capacidad", 0); // Condición simple que siempre será verdadera
 
       if (error) {
-        console.error("Error en Supabase:", error);
+        logger.error("Error en Supabase:", error);
         throw error;
       }
 
       await cargarPuntosEncuentro();
       onAlertChange?.();
     } catch (error) {
-      console.error("Error reseteando puntos:", error);
+      logger.error("Error reseteando puntos:", error);
     } finally {
       setLoadingPuntos(false);
     }
@@ -317,7 +318,7 @@ export default function AdminPanel({
 
       alert(`✅ Nivel de alerta cambiado a: ${nuevoNivel.toUpperCase()}`);
     } catch (error) {
-      console.error("Error cambiando nivel:", error);
+      logger.error("Error cambiando nivel:", error);
       alert("❌ Error al cambiar el nivel de alerta");
     } finally {
       setLoading(false);

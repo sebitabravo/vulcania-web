@@ -24,6 +24,7 @@ import { APP_CONFIG } from "@/lib/app-config";
 import { DEMO_USUARIO } from "@/lib/demo-data";
 import { useAuth } from "@/contexts/auth-context";
 import { ensureNotificationPermission, notify } from "@/lib/browser-notifications";
+import { logger } from "@/lib/logger";
 import {
   composeMessageWithImage,
   fileToDataUrl,
@@ -88,9 +89,9 @@ export default function ChatComponent() {
     if (!supabase || !usuario) return;
 
     try {
-      console.log("🔄 Recargando estadísticas de conversaciones...");
-      console.log("👤 Usuario actual:", usuario.id);
-      console.log(
+      logger.debug("🔄 Recargando estadísticas de conversaciones...");
+      logger.debug("👤 Usuario actual:", usuario.id);
+      logger.debug(
         "📖 Conversaciones marcadas como leídas:",
         Array.from(conversacionesLeidas)
       );
@@ -103,11 +104,11 @@ export default function ChatComponent() {
         .order("nombre");
 
       if (errorUsuarios || !todosUsuarios) {
-        console.error("Error cargando usuarios:", errorUsuarios);
+        logger.error("Error cargando usuarios:", errorUsuarios);
         return;
       }
 
-      console.log("👥 Usuarios encontrados:", todosUsuarios.length);
+      logger.debug("👥 Usuarios encontrados:", todosUsuarios.length);
 
       // Para cada usuario, obtener estadísticas de conversación
       const estadisticasPromises = todosUsuarios.map(async (otroUsuario) => {
@@ -125,7 +126,7 @@ export default function ChatComponent() {
           .maybeSingle();
 
         if (errorMensaje) {
-          console.error("Error obteniendo último mensaje:", errorMensaje);
+          logger.error("Error obteniendo último mensaje:", errorMensaje);
         }
 
         // Lógica simplificada para mensajes no leídos (solo estado local)
@@ -142,11 +143,11 @@ export default function ChatComponent() {
         ) {
           // Mostrar 1 mensaje no leído (sin hacer consultas adicionales a la DB)
           mensajesNoLeidos = 1;
-          console.log(
+          logger.debug(
             `📬 Usuario ${otroUsuario.nombre} tiene mensajes no leídos`
           );
         } else {
-          console.log(
+          logger.debug(
             `✅ Usuario ${otroUsuario.nombre} - sin mensajes no leídos`
           );
         }
@@ -178,10 +179,10 @@ export default function ChatComponent() {
         );
       });
 
-      console.log("📊 Estadísticas cargadas:", estadisticasOrdenadas);
+      logger.debug("📊 Estadísticas cargadas:", estadisticasOrdenadas);
       setConversaciones(estadisticasOrdenadas);
     } catch (error) {
-      console.error("Error recargando conversaciones:", error);
+      logger.error("Error recargando conversaciones:", error);
     }
   }, [usuario, conversacionesLeidas]);
 
@@ -236,20 +237,20 @@ export default function ChatComponent() {
           .order("fecha_envio", { ascending: true });
 
         if (error) {
-          console.error("Error cargando mensajes:", error);
+          logger.error("Error cargando mensajes:", error);
           return;
         }
 
         setMensajes(data || []);
       } catch (error) {
-        console.error("Error:", error);
+        logger.error("Error:", error);
       }
     };
 
     cargarMensajes();
 
     // Suscribirse a nuevos mensajes en tiempo real
-    console.log("🔄 Configurando suscripción en tiempo real para mensajes...");
+    logger.debug("🔄 Configurando suscripción en tiempo real para mensajes...");
 
     const subscription = supabase
       .channel(`mensajes_chat_${usuario.id}_${usuarioSeleccionado.id}`)
@@ -262,7 +263,7 @@ export default function ChatComponent() {
           filter: `or(and(emisor_id.eq.${usuario.id},receptor_id.eq.${usuarioSeleccionado.id}),and(emisor_id.eq.${usuarioSeleccionado.id},receptor_id.eq.${usuario.id}))`,
         },
         async (payload) => {
-          console.log("📨 Nuevo mensaje recibido en tiempo real:", payload);
+          logger.debug("📨 Nuevo mensaje recibido en tiempo real:", payload);
 
           const nuevoMensaje = payload.new as MensajeChat;
 
@@ -290,7 +291,7 @@ export default function ChatComponent() {
                 .single();
 
               if (!error && mensajeCompleto) {
-                console.log(
+                logger.debug(
                   "✅ Añadiendo mensaje en tiempo real:",
                   mensajeCompleto
                 );
@@ -299,7 +300,7 @@ export default function ChatComponent() {
                 setMensajes((prev) => {
                   const existe = prev.some((m) => m.id === mensajeCompleto.id);
                   if (existe) {
-                    console.log("⚠️ Mensaje ya existe, evitando duplicado");
+                    logger.debug("⚠️ Mensaje ya existe, evitando duplicado");
                     return prev;
                   }
 
@@ -308,26 +309,26 @@ export default function ChatComponent() {
                 });
               }
             } catch (error) {
-              console.error("❌ Error obteniendo mensaje completo:", error);
+              logger.error("❌ Error obteniendo mensaje completo:", error);
             }
           }
         }
       )
       .subscribe((status) => {
-        console.log("📡 Estado de suscripción:", status);
+        logger.debug("📡 Estado de suscripción:", status);
 
         // Actualizar estado de conexión basado en el status
         if (status === "SUBSCRIBED") {
           setConectado(true);
-          console.log("🟢 Conectado en tiempo real");
+          logger.debug("🟢 Conectado en tiempo real");
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           setConectado(false);
-          console.log("🔴 Error de conexión en tiempo real");
+          logger.debug("🔴 Error de conexión en tiempo real");
         }
       });
 
     return () => {
-      console.log("🔌 Desconectando suscripción en tiempo real");
+      logger.debug("🔌 Desconectando suscripción en tiempo real");
       subscription.unsubscribe();
     };
   }, [usuarioSeleccionado, usuario, recargarConversaciones]);
@@ -338,7 +339,7 @@ export default function ChatComponent() {
 
     if (!usuario || !supabase) return;
 
-    console.log(
+    logger.debug(
       "🌐 Configurando suscripción global para mensajes dirigidos al usuario..."
     );
 
@@ -353,7 +354,7 @@ export default function ChatComponent() {
           filter: `receptor_id.eq.${usuario.id}`,
         },
         async (payload) => {
-          console.log("🌐 Nuevo mensaje global recibido:", payload);
+          logger.debug("🌐 Nuevo mensaje global recibido:", payload);
 
           const nuevoMensaje = payload.new as MensajeChat;
 
@@ -377,11 +378,11 @@ export default function ChatComponent() {
         }
       )
       .subscribe((status) => {
-        console.log("📡 Estado de suscripción global:", status);
+        logger.debug("📡 Estado de suscripción global:", status);
       });
 
     return () => {
-      console.log("🔌 Desconectando suscripción global");
+      logger.debug("🔌 Desconectando suscripción global");
       globalSubscription.unsubscribe();
     };
   }, [usuario, usuarioSeleccionado, recargarConversaciones]);
@@ -400,7 +401,7 @@ export default function ChatComponent() {
     // Marcar esta conversación como leída localmente
     setConversacionesLeidas((prev) => new Set(prev.add(user.id)));
 
-    console.log(
+    logger.debug(
       "📖 Marcando conversación como leída para usuario:",
       user.nombre
     );
@@ -408,7 +409,7 @@ export default function ChatComponent() {
 
   const enviarMensaje = async () => {
     if (APP_CONFIG.demoReadOnly) {
-      console.warn("Modo demo activo: chat en solo lectura");
+      logger.warn("Modo demo activo: chat en solo lectura");
       return;
     }
 
@@ -447,7 +448,7 @@ export default function ChatComponent() {
         `);
 
       if (error) {
-        console.error("Error enviando mensaje:", error);
+        logger.error("Error enviando mensaje:", error);
         setNuevoMensaje(mensajeOriginal);
         setImageFile(fileOriginal ?? null);
         setImagePreview(fileOriginal ? await fileToDataUrl(fileOriginal) : null);
@@ -460,7 +461,7 @@ export default function ChatComponent() {
 
       recargarConversaciones();
     } catch (error) {
-      console.error("Error:", error);
+      logger.error("Error:", error);
       setNuevoMensaje(mensajeOriginal);
       setImageFile(fileOriginal ?? null);
       if (fileOriginal) {
@@ -481,7 +482,7 @@ export default function ChatComponent() {
 
   // Función para resetear el estado de conversaciones leídas (útil para debugging)
   const resetearEstadoLeido = () => {
-    console.log("🔄 Reseteando estado de conversaciones leídas...");
+    logger.debug("🔄 Reseteando estado de conversaciones leídas...");
     setConversacionesLeidas(new Set());
     recargarConversaciones();
   };

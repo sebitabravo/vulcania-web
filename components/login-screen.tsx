@@ -32,16 +32,9 @@ export default function LoginScreen() {
     // Ser permisivo con espacios pero exigir el 9
     const numeroLimpio = telefono.replace(/\s/g, ""); // Remover espacios
 
-    console.log("🔍 Debug validación teléfono (con 9 obligatorio):", {
-      telefonoOriginal: telefono,
-      telefonoLongitud: telefono.length,
-      numeroLimpio: numeroLimpio,
-      numeroLimpioLongitud: numeroLimpio.length,
-    });
 
     // Validación básica: debe empezar con +569 (formato móvil chileno)
     if (!numeroLimpio.startsWith("+569")) {
-      console.log("❌ No empieza con +569 (móvil chileno)");
       setError("Debe ser un número móvil chileno (+56 9...)");
       phoneInput.setCustomValidity(
         "Debe ser un número móvil chileno (+56 9...)"
@@ -52,7 +45,6 @@ export default function LoginScreen() {
 
     // Debe tener al menos 10 caracteres (+569 + algunos dígitos)
     if (numeroLimpio.length < 10) {
-      console.log("❌ Número muy corto:", numeroLimpio.length, "< 10");
       setError("El número es muy corto");
       phoneInput.setCustomValidity("El número es muy corto");
       phoneInput.reportValidity();
@@ -61,21 +53,14 @@ export default function LoginScreen() {
 
     // Validación permisiva: +56 9 seguido de números
     const formatoMovil = /^\+56\s?9\s?[\d\s]+$/.test(telefono);
-    console.log("🔍 Validación móvil chileno:", {
-      telefono: telefono,
-      regex: "^\\+56\\s?9\\s?[\\d\\s]+$",
-      valido: formatoMovil,
-    });
 
     if (!formatoMovil) {
-      console.log("❌ Formato móvil inválido");
       setError("Formato inválido. Use +56 9 seguido de números");
       phoneInput.setCustomValidity("Formato inválido");
       phoneInput.reportValidity();
       return;
     }
 
-    console.log("✅ Validación de teléfono exitosa");
 
     setLoading(true);
     setError("");
@@ -93,7 +78,6 @@ export default function LoginScreen() {
     setLoading(false);
   };
   const formatTelefono = (value: string) => {
-    console.log("🔧 formatTelefono - Input:", value, "Longitud:", value.length);
 
     // Si el usuario está borrando, ser muy permisivo
     if (value.length < telefono.length) {
@@ -110,12 +94,10 @@ export default function LoginScreen() {
       return value;
     }
 
-    console.log("🔧 Procesando nuevo input...");
 
     // Solo formatear cuando el usuario está agregando contenido
     // Limpiar caracteres no válidos pero conservar estructura
     let cleaned = value.replace(/[^\d+\s]/g, "");
-    console.log("🔧 Cleaned:", cleaned);
 
     // Si está completamente vacío, dar el formato base
     if (!cleaned || cleaned === "+" || cleaned === "+5" || cleaned === "+56") {
@@ -139,7 +121,6 @@ export default function LoginScreen() {
       cleaned = "+56 9 " + afterCode;
     }
 
-    console.log("🔧 Cleaned final:", cleaned);
 
     // Aplicar formato de espacios suavemente
     if (cleaned.startsWith("+56")) {
@@ -147,7 +128,6 @@ export default function LoginScreen() {
       const numerosPuros = cleaned
         .replace(/^\+56\s?9?\s?/, "")
         .replace(/\s/g, "");
-      console.log("🔧 Números puros extraídos:", numerosPuros);
 
       // Construir el formato correcto
       let result = "+56 9";
@@ -164,11 +144,9 @@ export default function LoginScreen() {
         }
       }
 
-      console.log("🔧 Resultado final:", result, "Longitud:", result.length);
       return result;
     }
 
-    console.log("🔧 Sin cambios, devolviendo:", cleaned);
     return cleaned;
   };
 
@@ -233,33 +211,11 @@ export default function LoginScreen() {
                     value={telefono}
                     onChange={(e) => {
                       const newValue = e.target.value;
-                      console.log(
-                        "📝 onChange - Input recibido:",
-                        newValue,
-                        "Longitud:",
-                        newValue.length
-                      );
-                      console.log(
-                        "📝 Estado actual:",
-                        telefono,
-                        "Longitud:",
-                        telefono.length
-                      );
-
                       const formatted = formatTelefono(newValue);
-                      console.log(
-                        "📝 Después de formatear:",
-                        formatted,
-                        "Longitud:",
-                        formatted.length
-                      );
 
                       // Solo actualizar si realmente cambió
                       if (formatted !== telefono) {
-                        console.log("📝 Actualizando estado...");
                         setTelefono(formatted);
-                      } else {
-                        console.log("📝 Sin cambios en el estado");
                       }
 
                       // Limpiar validación personalizada cuando el usuario escribe

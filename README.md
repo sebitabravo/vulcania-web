@@ -304,35 +304,50 @@ Con esta configuración:
 
 ```bash
 # Desarrollo
-pnpm dev          # Inicia servidor de desarrollo
-pnpm build        # Construye para producción
-pnpm start        # Ejecuta versión de producción
-pnpm lint         # Ejecuta ESLint
+pnpm dev               # Inicia servidor de desarrollo
+pnpm build             # Construye para producción
+pnpm start             # Ejecuta versión de producción
+pnpm lint              # Ejecuta ESLint
 
-# Base de datos
-pnpm db:setup     # Ejecuta scripts/init.sql
-pnpm db:migrate   # Ejecuta migraciones pendientes
+# Testing
+pnpm test              # Vitest en watch mode
+pnpm test:run          # Ejecuta tests una vez
+pnpm test:coverage     # Ejecuta tests con cobertura
 
-# Validación
-pnpm validate-env # Verifica variables de entorno
-pnpm type-check   # Verificación de TypeScript
+# Validación / Diagnóstico
+pnpm validate-env      # Verifica variables de entorno
+pnpm validate-env:vercel # Guía de variables para Vercel
+pnpm doctor            # Diagnóstico automático Supabase + esquema
 ```
 
----
+### 🩺 Diagnóstico Automático Recomendado
 
-## 🚨 Troubleshooting
+Antes de levantar el entorno productivo, ejecuta:
 
-### ❌ Error: "Invalid credentials"
-**Solución**: Verifica que las variables de entorno estén configuradas correctamente y que las claves sean válidas.
+```bash
+pnpm validate-env
+pnpm doctor
+```
 
-### ❌ Error: "Database connection failed"
-**Solución**: Asegúrate de que el proyecto Supabase esté activo y que las políticas RLS estén configuradas.
+Esto valida:
+- credenciales y conectividad de Supabase,
+- presencia de tablas requeridas,
+- estado básico de permisos,
+- estado de audio de alertas (auto-unlock habilitado).
 
-### ❌ Error: "Permission denied"
-**Solución**: Ejecuta el script `init.sql` completo en el SQL Editor de Supabase.
+### ⚡ Troubleshooting Rápido
 
-### ❌ Alertas no suenan
-**Solución**: Los navegadores requieren interacción del usuario antes de reproducir audio. Click en cualquier parte de la página primero.
+- **Credenciales inválidas / conexión fallida**:
+  - Ejecuta `pnpm validate-env` y luego `pnpm doctor`.
+  - Si persiste, regenera claves en Supabase Dashboard → Settings → API.
+
+- **Permisos/RLS**:
+  - Ejecuta `scripts/init.sql` completo en Supabase SQL Editor.
+  - Repite `pnpm doctor` para confirmar.
+
+- **Sin sonido en alertas**:
+  - Interactúa una vez con la página (click/tecla).
+  - La app aplica auto-unlock de audio en el primer gesto del usuario.
 
 ---
 

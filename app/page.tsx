@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Mountain, Map, Users, MessageCircle, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/auth-context";
 import { useAdminPanel } from "@/hooks/use-admin-panel";
+import { setupAudioUnlock } from "@/lib/audio-unlock";
 import LoginScreen from "@/components/login-screen";
 import VolcanoStatusHeader from "@/components/volcano-status-header";
 import MapComponent from "@/components/map-component";
@@ -16,6 +17,10 @@ import AdminPanel from "@/components/admin-panel";
 export default function VulcaniaApp() {
   const { usuario, logout, loading } = useAuth();
   const [activeTab, setActiveTab] = useState("mapa");
+
+  useEffect(() => {
+    setupAudioUnlock();
+  }, []);
   const { showAdminPanel, closeAdminPanel } = useAdminPanel();
   const [refreshKey, setRefreshKey] = useState(0);
 

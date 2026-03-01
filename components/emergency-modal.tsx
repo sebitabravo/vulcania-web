@@ -5,6 +5,7 @@ import { AlertTriangle, AlertCircle, X, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { supabase, type AlertaVolcan, type InformacionVolcan } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 
 declare global {
   interface Window {
@@ -18,7 +19,7 @@ interface CriticalAlert extends AlertaVolcan {
 
 // Función para crear sonidos de alerta usando Web Audio API
 const createAlertSound = (type: "naranja" | "rojo") => {
-  console.log("🎵 Creando sonido de alerta:", type);
+  logger.debug("🎵 Creando sonido de alerta:", type);
   try {
     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
@@ -68,7 +69,7 @@ const createAlertSound = (type: "naranja" | "rojo") => {
       }
     }
   } catch (error) {
-    console.warn("No se pudo reproducir el sonido de alerta:", error);
+    logger.warn("No se pudo reproducir el sonido de alerta:", error);
   }
 };
 
@@ -84,7 +85,7 @@ export default function EmergencyModal() {
 
   // Función para detener sonido (solo cuando se cierra la modal)
   const stopAlertSound = useCallback(() => {
-    console.log("🔇 Deteniendo sonido de alerta");
+    logger.debug("🔇 Deteniendo sonido de alerta");
     if (soundInterval) {
       clearInterval(soundInterval);
       setSoundInterval(null);
@@ -93,7 +94,7 @@ export default function EmergencyModal() {
 
   // Función para reproducir sonido OBLIGATORIO y continuo
   const playAlertSound = useCallback((nivel: "naranja" | "rojo") => {
-    console.log("🎵 Iniciando sonido PERSISTENTE:", nivel);
+    logger.debug("🎵 Iniciando sonido PERSISTENTE:", nivel);
 
     // Reproducir sonido inmediatamente
     createAlertSound(nivel);
@@ -107,10 +108,10 @@ export default function EmergencyModal() {
     const interval = setInterval(
       () => {
         if (showModal && !alertDismissed) {
-          console.log("🔄 Continuando sonido de emergencia...");
+          logger.debug("🔄 Continuando sonido de emergencia...");
           createAlertSound(nivel);
         } else {
-          console.log("🔇 Deteniendo sonido - modal cerrada");
+          logger.debug("🔇 Deteniendo sonido - modal cerrada");
           clearInterval(interval);
         }
       },
@@ -122,7 +123,7 @@ export default function EmergencyModal() {
 
   // Función para forzar emergencia (para pruebas)
   const forceEmergency = () => {
-    console.log("🚨 FORZANDO EMERGENCIA!");
+    logger.debug("🚨 FORZANDO EMERGENCIA!");
     const fakeAlert = {
       nivel_alerta: "rojo",
       descripcion:
@@ -170,7 +171,7 @@ export default function EmergencyModal() {
 
           // Si es una nueva alerta (diferente ID), resetear dismissal
           if (lastAlertId !== alertId) {
-            console.log(
+            logger.debug(
               "🆕 Nueva alerta detectada:",
               alerta.nivel_alerta,
               "ID:",
@@ -186,7 +187,7 @@ export default function EmergencyModal() {
             }, 1000);
           } else if (!alertDismissed && !showModal) {
             // Si es la misma alerta pero no está mostrada y no fue dismissida
-            console.log(
+            logger.debug(
               "🚨 Reactivando alerta existente:",
               alerta.nivel_alerta
             );
@@ -200,13 +201,13 @@ export default function EmergencyModal() {
         } else {
           // Si no hay alerta crítica, limpiar estados
           if (showModal) {
-            console.log("✅ Alerta ya no es crítica, cerrando modal");
+            logger.debug("✅ Alerta ya no es crítica, cerrando modal");
             setShowModal(false);
             stopAlertSound();
           }
         }
       } catch (error) {
-        console.error("Error verificando alerta:", error);
+        logger.error("Error verificando alerta:", error);
       }
     };
 
@@ -241,7 +242,7 @@ export default function EmergencyModal() {
           </Button>
           <Button
             onClick={() => {
-              console.log("✅ Simulando vuelta a normal");
+              logger.debug("✅ Simulando vuelta a normal");
               setShowModal(false);
               setAlertDismissed(false); // Permitir que nuevas alertas se muestren
               stopAlertSound();
@@ -283,7 +284,7 @@ export default function EmergencyModal() {
               </div>
               <button
                 onClick={() => {
-                  console.log("❌ Cerrando modal de emergencia");
+                  logger.debug("❌ Cerrando modal de emergencia");
                   setShowModal(false);
                   setAlertDismissed(true);
                   stopAlertSound();
@@ -329,7 +330,7 @@ export default function EmergencyModal() {
 
               <Button
                 onClick={() => {
-                  console.log("✅ Cerrando modal - Entendido");
+                  logger.debug("✅ Cerrando modal - Entendido");
                   setShowModal(false);
                   setAlertDismissed(true);
                   stopAlertSound();

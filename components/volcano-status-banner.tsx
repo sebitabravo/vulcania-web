@@ -37,6 +37,7 @@ import {
   type InformacionVolcan,
 } from "@/lib/supabase";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { logger } from "@/lib/logger";
 
 // Extend Window interface for webkitAudioContext
 declare global {
@@ -141,7 +142,7 @@ const createAlertSound = (type: "naranja" | "rojo") => {
       }
     }
   } catch (error) {
-    console.warn("No se pudo reproducir el sonido de alerta:", error);
+    logger.warn("No se pudo reproducir el sonido de alerta:", error);
   }
 };
 
@@ -239,7 +240,7 @@ export default function VolcanoStatusBanner() {
 
   // Función para reproducir sonido de alerta con repetición
   const playAlertSound = useCallback((nivel: "naranja" | "rojo") => {
-    console.log("🎵 Reproduciendo sonido:", nivel);
+    logger.debug("🎵 Reproduciendo sonido:", nivel);
     if (!soundEnabled) return;
 
     setIsPlayingSound(true);
@@ -286,7 +287,7 @@ export default function VolcanoStatusBanner() {
 
   // Función para forzar emergencia
   const forceEmergency = () => {
-    console.log("🚨 FORZANDO EMERGENCIA!");
+    logger.debug("🚨 FORZANDO EMERGENCIA!");
     setEmergencyMode(true);
     setVolcanoData(emergencyData as VolcanoStatusComplete);
     setAlertDismissed(false);
@@ -299,15 +300,15 @@ export default function VolcanoStatusBanner() {
 
   // Función para cargar datos completos del volcán desde la base de datos
   const cargarDatosVolcan = async () => {
-    console.log("📡 Iniciando carga de datos...");
+    logger.debug("📡 Iniciando carga de datos...");
 
     if (!supabase) {
-      console.error("❌ Cliente de Supabase no disponible");
+      logger.error("❌ Cliente de Supabase no disponible");
       return null;
     }
 
     try {
-      console.log("🔍 Consultando alertas...");
+      logger.debug("🔍 Consultando alertas...");
       // Cargar alerta actual
       const { data: alerta, error: errorAlerta } = await supabase
         .from("alertas_volcan")
@@ -316,10 +317,10 @@ export default function VolcanoStatusBanner() {
         .limit(1)
         .single();
 
-      console.log("📋 Resultado alerta:", { alerta, errorAlerta });
+      logger.debug("📋 Resultado alerta:", { alerta, errorAlerta });
 
       if (errorAlerta || !alerta) {
-        console.error("❌ Error cargando alerta:", errorAlerta);
+        logger.error("❌ Error cargando alerta:", errorAlerta);
         return null;
       }
 
@@ -331,7 +332,7 @@ export default function VolcanoStatusBanner() {
         .single();
 
       if (errorParametros || !parametros) {
-        console.error("Error cargando parámetros:", errorParametros);
+        logger.error("Error cargando parámetros:", errorParametros);
         return null;
       }
 
@@ -343,7 +344,7 @@ export default function VolcanoStatusBanner() {
         .single();
 
       if (errorConfig || !configuracion) {
-        console.error("Error cargando configuración:", errorConfig);
+        logger.error("Error cargando configuración:", errorConfig);
         return null;
       }
 
@@ -356,7 +357,7 @@ export default function VolcanoStatusBanner() {
           .order("orden");
 
       if (errorRecomendaciones) {
-        console.error("Error cargando recomendaciones:", errorRecomendaciones);
+        logger.error("Error cargando recomendaciones:", errorRecomendaciones);
         return null;
       }
 
@@ -368,7 +369,7 @@ export default function VolcanoStatusBanner() {
         .single();
 
       if (errorZona || !zonaExclusion) {
-        console.error("Error cargando zona de exclusión:", errorZona);
+        logger.error("Error cargando zona de exclusión:", errorZona);
         return null;
       }
 
@@ -380,7 +381,7 @@ export default function VolcanoStatusBanner() {
         .single();
 
       if (errorAcciones || !accionesRequeridas) {
-        console.error("Error cargando acciones requeridas:", errorAcciones);
+        logger.error("Error cargando acciones requeridas:", errorAcciones);
         return null;
       }
 
@@ -392,7 +393,7 @@ export default function VolcanoStatusBanner() {
         .single();
 
       if (errorVolcan || !informacionVolcan) {
-        console.error("Error cargando información del volcán:", errorVolcan);
+        logger.error("Error cargando información del volcán:", errorVolcan);
         return null;
       }
 
@@ -406,7 +407,7 @@ export default function VolcanoStatusBanner() {
         informacion_volcan: informacionVolcan,
       };
     } catch (error) {
-      console.error("Error general cargando datos:", error);
+      logger.error("Error general cargando datos:", error);
       return null;
     }
   };
@@ -416,12 +417,12 @@ export default function VolcanoStatusBanner() {
     nuevoNivel: "verde" | "amarillo" | "naranja" | "rojo"
   ) => {
     if (!volcanoData) {
-      console.log("❌ No hay datos del volcán disponibles");
+      logger.debug("❌ No hay datos del volcán disponibles");
       return;
     }
 
     if (!supabase) {
-      console.log("❌ Cliente de Supabase no disponible");
+      logger.debug("❌ Cliente de Supabase no disponible");
       return;
     }
 
@@ -477,7 +478,7 @@ export default function VolcanoStatusBanner() {
         .eq("id", volcanoData.parametros.id);
 
       if (errorParametros) {
-        console.error("Error actualizando parámetros:", errorParametros);
+        logger.error("Error actualizando parámetros:", errorParametros);
         return;
       }
 
@@ -492,7 +493,7 @@ export default function VolcanoStatusBanner() {
         .eq("id", volcanoData.alerta.id);
 
       if (errorAlerta) {
-        console.error("Error actualizando alerta:", errorAlerta);
+        logger.error("Error actualizando alerta:", errorAlerta);
         return;
       }
 
@@ -503,7 +504,7 @@ export default function VolcanoStatusBanner() {
         setAlertDismissed(false);
 
         const previousLevel = previousLevelRef.current;
-        console.log("🔄 Simulación completada:", {
+        logger.debug("🔄 Simulación completada:", {
           nuevoNivel,
           previousLevel,
           cambioDetectado:
@@ -515,34 +516,34 @@ export default function VolcanoStatusBanner() {
           (nuevoNivel === "naranja" || nuevoNivel === "rojo") &&
           previousLevel !== nuevoNivel
         ) {
-          console.log("🎵 Reproduciendo sonido por cambio de nivel");
+          logger.debug("🎵 Reproduciendo sonido por cambio de nivel");
           playAlertSound(nuevoNivel);
         }
 
         previousLevelRef.current = nuevoNivel;
 
         if (nuevoNivel === "naranja" || nuevoNivel === "rojo") {
-          console.log("🚨 Mostrando modal de emergencia");
+          logger.debug("🚨 Mostrando modal de emergencia");
           setShowCriticalAlert(true);
         } else {
-          console.log("✅ Cerrando modal (nivel no crítico)");
+          logger.debug("✅ Cerrando modal (nivel no crítico)");
           setShowCriticalAlert(false);
         }
       }
     } catch (error) {
-      console.error("Error simulando cambio de nivel:", error);
+      logger.error("Error simulando cambio de nivel:", error);
     }
   };
 
   useEffect(() => {
-    console.log("🚀 useEffect iniciando carga de datos...");
+    logger.debug("🚀 useEffect iniciando carga de datos...");
 
     const loadVolcanoData = async () => {
-      console.log("📊 Cargando datos del volcán...");
+      logger.debug("📊 Cargando datos del volcán...");
       const data = await cargarDatosVolcan();
 
       if (data) {
-        console.log("✅ Datos cargados:", {
+        logger.debug("✅ Datos cargados:", {
           nivel: data.alerta.nivel_alerta,
           descripcion: data.alerta.descripcion,
         });
@@ -555,28 +556,28 @@ export default function VolcanoStatusBanner() {
           data.alerta.nivel_alerta === "naranja" ||
           data.alerta.nivel_alerta === "rojo";
 
-        console.log("🔍 Verificando nivel crítico:", {
+        logger.debug("🔍 Verificando nivel crítico:", {
           nivel: data.alerta.nivel_alerta,
           esCritico,
           alertDismissed,
         });
 
         if (esCritico && !alertDismissed) {
-          console.log(
+          logger.debug(
             "🚨 NIVEL CRÍTICO DETECTADO! Mostrando modal y reproduciendo sonido"
           );
           setShowCriticalAlert(true);
 
           // Reproducir sonido después de un pequeño delay
           setTimeout(() => {
-            console.log("🎵 Iniciando reproducción de sonido...");
+            logger.debug("🎵 Iniciando reproducción de sonido...");
             playAlertSound(data.alerta.nivel_alerta as "naranja" | "rojo");
           }, 1000);
         } else {
-          console.log("ℹ️ Nivel no crítico o alerta ya fue cerrada");
+          logger.debug("ℹ️ Nivel no crítico o alerta ya fue cerrada");
         }
       } else {
-        console.log("❌ No se pudieron cargar los datos del volcán");
+        logger.debug("❌ No se pudieron cargar los datos del volcán");
       }
       setLoading(false);
     };
@@ -617,7 +618,7 @@ export default function VolcanoStatusBanner() {
   // useEffect para manejar modo de emergencia
   useEffect(() => {
     if (emergencyMode && volcanoData) {
-      console.log("🚨 Modo emergencia activado - forzando modal");
+      logger.debug("🚨 Modo emergencia activado - forzando modal");
       setShowCriticalAlert(true);
       setAlertDismissed(false);
 

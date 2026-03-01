@@ -14,6 +14,7 @@ import {
 import { APP_CONFIG } from "@/lib/app-config";
 import { DEMO_AVISOS } from "@/lib/demo-data";
 import { useAuth } from "@/contexts/auth-context";
+import { logger } from "@/lib/logger";
 
 export default function CommunityPanel() {
   const [avisos, setAvisos] = useState<AvisoComunidad[]>([]);
@@ -24,7 +25,7 @@ export default function CommunityPanel() {
 
   // DEBUG: Log del estado del usuario
   useEffect(() => {
-    console.log("🔧 Estado del usuario en CommunityPanel:", {
+    logger.debug("🔧 Estado del usuario en CommunityPanel:", {
       usuario,
       hasId: usuario?.id,
       isConfigured: isSupabaseConfigured(),
@@ -35,9 +36,9 @@ export default function CommunityPanel() {
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       if (APP_CONFIG.demoMode) {
-        console.log("ℹ️ Supabase no configurado, usando modo demo offline");
+        logger.debug("ℹ️ Supabase no configurado, usando modo demo offline");
       } else {
-        console.error("❌ Supabase no está configurado correctamente");
+        logger.error("❌ Supabase no está configurado correctamente");
       }
       setLoading(false);
       return;
@@ -52,7 +53,7 @@ export default function CommunityPanel() {
     }
 
     if (!supabase) {
-      console.error("❌ No se puede cargar avisos: Supabase no configurado");
+      logger.error("❌ No se puede cargar avisos: Supabase no configurado");
       setLoading(false);
       return;
     }
@@ -75,13 +76,13 @@ export default function CommunityPanel() {
         .limit(20);
 
       if (error) {
-        console.error("Error cargando avisos:", error);
+        logger.error("Error cargando avisos:", error);
         return;
       }
 
       setAvisos(data || []);
     } catch (error) {
-      console.error("Error:", error);
+      logger.error("Error:", error);
     } finally {
       setLoading(false);
     }
@@ -95,7 +96,7 @@ export default function CommunityPanel() {
     }
 
     if (!supabase) {
-      console.error(
+      logger.error(
         "❌ No se puede configurar suscripción: Supabase no configurado"
       );
       setLoading(false);
@@ -125,35 +126,35 @@ export default function CommunityPanel() {
 
   const enviarAviso = async () => {
     if (APP_CONFIG.demoReadOnly) {
-      console.warn("Modo demo activo: envío de avisos bloqueado");
+      logger.warn("Modo demo activo: envío de avisos bloqueado");
       return;
     }
 
     if (!nuevoMensaje.trim() || !usuario) {
-      console.warn(
+      logger.warn(
         "No se puede enviar: mensaje vacío o usuario no autenticado"
       );
       return;
     }
 
     if (!supabase) {
-      console.error("❌ No se puede enviar aviso: Supabase no configurado");
+      logger.error("❌ No se puede enviar aviso: Supabase no configurado");
       return;
     }
 
     if (!usuario.id) {
-      console.error("❌ No se puede enviar aviso: Usuario sin ID");
+      logger.error("❌ No se puede enviar aviso: Usuario sin ID");
       return;
     }
 
-    console.log("Enviando aviso:", {
+    logger.debug("Enviando aviso:", {
       usuario_id: usuario.id,
       mensaje: nuevoMensaje.trim(),
       usuario: usuario,
     });
 
     // VERIFICAR que el usuario existe en la base de datos
-    console.log("🔍 Verificando usuario en base de datos...");
+    logger.debug("🔍 Verificando usuario en base de datos...");
     try {
       const { data: usuarioVerificado, error: errorVerificacion } =
         await supabase
@@ -163,7 +164,7 @@ export default function CommunityPanel() {
           .single();
 
       if (errorVerificacion || !usuarioVerificado) {
-        console.error("❌ Usuario no encontrado en base de datos:", {
+        logger.error("❌ Usuario no encontrado en base de datos:", {
           usuario_id: usuario.id,
           error: errorVerificacion,
         });
@@ -180,9 +181,9 @@ export default function CommunityPanel() {
         return;
       }
 
-      console.log("✅ Usuario verificado en base de datos:", usuarioVerificado);
+      logger.debug("✅ Usuario verificado en base de datos:", usuarioVerificado);
     } catch (verificationError) {
-      console.error("❌ Error verificando usuario:", verificationError);
+      logger.error("❌ Error verificando usuario:", verificationError);
       return;
     }
 
@@ -207,8 +208,8 @@ export default function CommunityPanel() {
       `);
 
       if (error) {
-        console.error("Error enviando aviso:", error);
-        console.error("Detalles del error:", {
+        logger.error("Error enviando aviso:", error);
+        logger.error("Detalles del error:", {
           message: error.message,
           details: error.details,
           hint: error.hint,
@@ -223,7 +224,7 @@ export default function CommunityPanel() {
         setAvisos((prev) => [data[0], ...prev]);
       }
     } catch (error) {
-      console.error("Error:", error);
+      logger.error("Error:", error);
       setNuevoMensaje(mensajeTexto); // Restaurar mensaje si hay error
     } finally {
       setEnviando(false);

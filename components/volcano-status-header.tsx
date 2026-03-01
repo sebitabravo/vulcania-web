@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { supabase, type AlertaVolcan } from "@/lib/supabase";
 import { APP_CONFIG } from "@/lib/app-config";
 import { DEMO_ALERTA } from "@/lib/demo-data";
+import { logger } from "@/lib/logger";
 
 const getNivelConfig = (nivel: string) => {
   switch (nivel) {
@@ -81,7 +82,7 @@ export default function VolcanoStatusHeader() {
         if (APP_CONFIG.demoMode) {
           setAlerta(DEMO_ALERTA);
         } else {
-          console.error("❌ Supabase no está configurado");
+          logger.error("❌ Supabase no está configurado");
         }
         setLoading(false);
         return;
@@ -96,13 +97,13 @@ export default function VolcanoStatusHeader() {
           .single();
 
         if (error) {
-          console.error("Error cargando alerta:", error);
+          logger.error("Error cargando alerta:", error);
           return;
         }
 
         setAlerta(data);
       } catch (error) {
-        console.error("Error:", error);
+        logger.error("Error:", error);
       } finally {
         setLoading(false);
       }

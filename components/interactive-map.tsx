@@ -101,13 +101,14 @@ function InteractiveMapClient() {
       });
 
       try {
+        // En modo demo siempre usamos datos locales
+        if (APP_CONFIG.demoMode) {
+          setPuntosEncuentro(DEMO_PUNTOS_ENCUENTRO);
+          return;
+        }
+
         // Verificar que Supabase esté configurado
         if (!supabase) {
-          if (APP_CONFIG.demoMode) {
-            setPuntosEncuentro(DEMO_PUNTOS_ENCUENTRO);
-            return;
-          }
-
           logger.error("❌ Supabase no está configurado");
           logger.debug("🔍 Variables de entorno disponibles:", {
             hasSupabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,

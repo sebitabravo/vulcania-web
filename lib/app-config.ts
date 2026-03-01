@@ -12,7 +12,7 @@ const hasSupabaseEnv = Boolean(
 const demoMode = toBoolean(process.env.NEXT_PUBLIC_DEMO_MODE, !hasSupabaseEnv);
 const demoReadOnly = toBoolean(
   process.env.NEXT_PUBLIC_DEMO_READONLY,
-  demoMode
+  false
 );
 
 export const APP_CONFIG = {

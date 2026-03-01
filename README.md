@@ -116,7 +116,7 @@ Puedes ejecutar y desplegar la app sin Supabase:
 
 ```env
 NEXT_PUBLIC_DEMO_MODE="true"
-NEXT_PUBLIC_DEMO_READONLY="true"
+NEXT_PUBLIC_DEMO_READONLY="false"
 NEXT_PUBLIC_DEMO_PHONE="+56 9 8765 4321"
 NEXT_PUBLIC_ENABLE_ADMIN_PANEL="false"
 ```

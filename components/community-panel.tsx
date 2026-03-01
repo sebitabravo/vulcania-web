@@ -50,7 +50,7 @@ export default function CommunityPanel() {
   }, []);
 
   const cargarAvisos = async () => {
-    if (!supabase && APP_CONFIG.demoMode) {
+    if (APP_CONFIG.demoMode) {
       setAvisos(DEMO_AVISOS);
       setLoading(false);
       return;
@@ -93,7 +93,7 @@ export default function CommunityPanel() {
   };
 
   useEffect(() => {
-    if (!supabase && APP_CONFIG.demoMode) {
+    if (APP_CONFIG.demoMode) {
       setAvisos(DEMO_AVISOS);
       setLoading(false);
       return;

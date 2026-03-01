@@ -74,7 +74,7 @@ export default function ChatComponent() {
 
   // Función para recargar estadísticas de conversaciones
   const recargarConversaciones = useCallback(async () => {
-    if (!supabase && APP_CONFIG.demoMode && usuario) {
+    if (APP_CONFIG.demoMode && usuario) {
       const data = OFFLINE_USERS
         .filter((u) => u.id !== usuario.id)
         .map((u) => ({
@@ -195,7 +195,7 @@ export default function ChatComponent() {
 
   // Cargar mensajes y suscribirse a tiempo real
   useEffect(() => {
-    if (!supabase && APP_CONFIG.demoMode && usuarioSeleccionado) {
+    if (APP_CONFIG.demoMode && usuarioSeleccionado) {
       const demoMsgs: MensajeChat[] = [
         {
           id: "demo-msg-1",
@@ -335,7 +335,7 @@ export default function ChatComponent() {
 
   // Suscripción global para escuchar TODOS los mensajes dirigidos al usuario actual
   useEffect(() => {
-    if (!supabase && APP_CONFIG.demoMode) return;
+    if (APP_CONFIG.demoMode) return;
 
     if (!usuario || !supabase) return;
 

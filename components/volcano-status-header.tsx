@@ -78,12 +78,14 @@ export default function VolcanoStatusHeader() {
 
   useEffect(() => {
     const cargarAlerta = async () => {
+      if (APP_CONFIG.demoMode) {
+        setAlerta(DEMO_ALERTA);
+        setLoading(false);
+        return;
+      }
+
       if (!supabase) {
-        if (APP_CONFIG.demoMode) {
-          setAlerta(DEMO_ALERTA);
-        } else {
-          logger.error("❌ Supabase no está configurado");
-        }
+        logger.error("❌ Supabase no está configurado");
         setLoading(false);
         return;
       }
@@ -111,8 +113,8 @@ export default function VolcanoStatusHeader() {
 
     cargarAlerta();
 
-    // Suscribirse a cambios en tiempo real solo si supabase está disponible
-    if (!supabase) return;
+    // Suscribirse a cambios en tiempo real solo fuera de demo y con supabase disponible
+    if (APP_CONFIG.demoMode || !supabase) return;
 
     const subscription = supabase
       .channel("alertas_volcan_changes")

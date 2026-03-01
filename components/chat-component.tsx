@@ -11,6 +11,8 @@ import {
   ArrowLeft,
   Wifi,
   WifiOff,
+  ImagePlus,
+  X,
 } from "lucide-react";
 import {
   supabase,
@@ -21,6 +23,13 @@ import {
 import { APP_CONFIG } from "@/lib/app-config";
 import { DEMO_USUARIO } from "@/lib/demo-data";
 import { useAuth } from "@/contexts/auth-context";
+import { ensureNotificationPermission, notify } from "@/lib/browser-notifications";
+import {
+  composeMessageWithImage,
+  fileToDataUrl,
+  isImageFile,
+  parseMessageMedia,
+} from "@/lib/message-media";
 
 const OFFLINE_USERS: Usuario[] = [
   DEMO_USUARIO,
@@ -48,6 +57,8 @@ export default function ChatComponent() {
   const [nuevoMensaje, setNuevoMensaje] = useState("");
   const [loading, setLoading] = useState(true);
   const [enviando, setEnviando] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [conectado, setConectado] = useState(true);
   const [conversacionesLeidas, setConversacionesLeidas] = useState<Set<string>>(
     new Set()
@@ -57,13 +68,7 @@ export default function ChatComponent() {
 
   // Solicitar permisos de notificación al montar el componente
   useEffect(() => {
-    if (typeof window !== "undefined" && "Notification" in window) {
-      if (Notification.permission === "default") {
-        Notification.requestPermission().then((permission) => {
-          console.log("📢 Permisos de notificación:", permission);
-        });
-      }
-    }
+    void ensureNotificationPermission();
   }, []);
 
   // Función para recargar estadísticas de conversaciones
@@ -361,11 +366,10 @@ export default function ChatComponent() {
             setConversacionesLeidas((prev) => {
               const nuevasLeidas = new Set(prev);
               nuevasLeidas.delete(nuevoMensaje.emisor_id);
-              console.log(
-                `📬 Marcando conversación como no leída: ${nuevoMensaje.emisor_id}`
-              );
               return nuevasLeidas;
             });
+
+            notify("Nuevo mensaje", "Recibiste un mensaje en el chat comunitario");
 
             // Recargar conversaciones para actualizar el badge
             recargarConversaciones();
@@ -408,42 +412,60 @@ export default function ChatComponent() {
       return;
     }
 
-    if (!nuevoMensaje.trim() || !usuario || !usuarioSeleccionado || !supabase)
+    if ((!nuevoMensaje.trim() && !imageFile) || !usuario || !usuarioSeleccionado || !supabase)
       return;
 
-    const mensajeTexto = nuevoMensaje.trim();
-    setNuevoMensaje(""); // Limpiar inmediatamente para mejor UX
+    const mensajeOriginal = nuevoMensaje.trim();
+    const fileOriginal = imageFile;
+    setNuevoMensaje("");
+    setImageFile(null);
+    setImagePreview(null);
     setEnviando(true);
 
     try {
-      const { data, error } = await supabase.from("mensajes_chat").insert([
-        {
-          emisor_id: usuario.id,
-          receptor_id: usuarioSeleccionado.id,
-          mensaje: mensajeTexto,
-        },
-      ]).select(`
-        *,
-        emisor:emisor_id (id, nombre),
-        receptor:receptor_id (id, nombre)
-      `);
+      let imageUrl: string | undefined;
+
+      if (fileOriginal) {
+        imageUrl = await fileToDataUrl(fileOriginal);
+      }
+
+      const mensajeTexto = composeMessageWithImage(mensajeOriginal, imageUrl);
+
+      const { data, error } = await supabase
+        .from("mensajes_chat")
+        .insert([
+          {
+            emisor_id: usuario.id,
+            receptor_id: usuarioSeleccionado.id,
+            mensaje: mensajeTexto,
+          },
+        ])
+        .select(`
+          *,
+          emisor:emisor_id (id, nombre),
+          receptor:receptor_id (id, nombre)
+        `);
 
       if (error) {
         console.error("Error enviando mensaje:", error);
-        setNuevoMensaje(mensajeTexto); // Restaurar mensaje si hay error
+        setNuevoMensaje(mensajeOriginal);
+        setImageFile(fileOriginal ?? null);
+        setImagePreview(fileOriginal ? await fileToDataUrl(fileOriginal) : null);
         return;
       }
 
-      // Agregar el nuevo mensaje inmediatamente al estado local
       if (data && data[0]) {
         setMensajes((prev) => [...prev, data[0]]);
       }
 
-      // Recargar conversaciones para actualizar último mensaje
       recargarConversaciones();
     } catch (error) {
       console.error("Error:", error);
-      setNuevoMensaje(mensajeTexto); // Restaurar mensaje si hay error
+      setNuevoMensaje(mensajeOriginal);
+      setImageFile(fileOriginal ?? null);
+      if (fileOriginal) {
+        setImagePreview(await fileToDataUrl(fileOriginal));
+      }
     } finally {
       setEnviando(false);
     }
@@ -627,6 +649,7 @@ export default function ChatComponent() {
               <div className="space-y-4">
                 {mensajes.map((mensaje) => {
                   const esMio = mensaje.emisor_id === usuario?.id;
+                  const { text, imageUrl } = parseMessageMedia(mensaje.mensaje);
                   return (
                     <div
                       key={mensaje.id}
@@ -641,7 +664,15 @@ export default function ChatComponent() {
                             : "bg-gray-800 text-gray-200"
                         }`}
                       >
-                        <p className="text-sm">{mensaje.mensaje}</p>
+                        {text ? <p className="text-sm">{text}</p> : null}
+                        {imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={imageUrl}
+                            alt="Imagen compartida"
+                            className="mt-2 rounded-md max-h-56 w-auto border border-white/20"
+                          />
+                        ) : null}
                         <p
                           className={`text-xs mt-1 ${
                             esMio ? "text-green-200" : "text-gray-500"
@@ -670,7 +701,41 @@ export default function ChatComponent() {
         )}
       </div>
 
-      <div className="flex space-x-2">
+      {imagePreview ? (
+        <div className="relative w-fit">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={imagePreview} alt="Vista previa" className="max-h-44 rounded-md border border-gray-700" />
+          <button
+            type="button"
+            className="absolute -top-2 -right-2 bg-black/80 text-white rounded-full p-1"
+            onClick={() => {
+              setImageFile(null);
+              setImagePreview(null);
+            }}
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      ) : null}
+
+      <div className="flex space-x-2 items-center">
+        <label className="cursor-pointer inline-flex items-center justify-center h-10 w-10 rounded-md border border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700">
+          <ImagePlus className="h-4 w-4" />
+          <input
+            type="file"
+            accept="image/*"
+            className="hidden"
+            disabled={enviando || APP_CONFIG.demoReadOnly}
+            onChange={async (e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              if (!isImageFile(file)) return;
+              setImageFile(file);
+              setImagePreview(await fileToDataUrl(file));
+            }}
+          />
+        </label>
+
         <Input
           placeholder="Escribe un mensaje..."
           value={nuevoMensaje}
@@ -681,7 +746,7 @@ export default function ChatComponent() {
         />
         <Button
           onClick={enviarMensaje}
-          disabled={!nuevoMensaje.trim() || enviando || APP_CONFIG.demoReadOnly}
+          disabled={(!nuevoMensaje.trim() && !imageFile) || enviando || APP_CONFIG.demoReadOnly}
           className="bg-green-600 hover:bg-green-700 text-white px-6"
         >
           {enviando ? (

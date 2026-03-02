@@ -2,7 +2,7 @@ name: Reviewer Auto PR
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
@@ -12,25 +12,42 @@ jobs:
   reviewer:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: [self-hosted, openclaw-reviewer]
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
 
       - name: Ejecutar reviewer assistant
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
           OPENCLAW_REVIEWER_COMMAND: ${{ vars.OPENCLAW_REVIEWER_COMMAND }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           if [ -z "${OPENCLAW_REVIEWER_COMMAND:-}" ]; then
             echo "Falta variable OPENCLAW_REVIEWER_COMMAND"
-            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "⚠️ Workflow activo, pero falta configurar la variable OPENCLAW_REVIEWER_COMMAND con el comando exacto para ejecutar tu assistant reviewer."
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "⚠️ **Reviewer Automático - Setup Incompleto**
+
+El workflow de code review está activo, pero falta configurar la variable de repositorio \`OPENCLAW_REVIEWER_COMMAND\`.
+
+**Para completar el setup:**
+1. Ve a Settings → Secrets and variables → Actions → Variables
+2. Crea una nueva variable: \`OPENCLAW_REVIEWER_COMMAND\`
+3. Define el comando exacto para ejecutar tu assistant reviewer.
+
+Una vez configurada, el reviewer se ejecutará automáticamente en los próximos commits."
             exit 0
           fi
 
-          export PR_NUMBER REPO
+          export PR_NUMBER REPO PR_URL PR_TITLE PR_AUTHOR PR_BASE_REF PR_HEAD_REF GH_TOKEN
           bash -lc "$OPENCLAW_REVIEWER_COMMAND"

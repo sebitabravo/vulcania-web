@@ -10,20 +10,54 @@ permissions:
 
 jobs:
   reviewer:
+    # 🔒 CONTROLES DE SEGURIDAD
     if: |
       !github.event.pull_request.draft &&
       github.event.pull_request.head.repo.fork == false &&
       contains(fromJson('["sebitabravo","sebitabravo-code"]'), github.actor)
     runs-on: [self-hosted, openclaw-reviewer]
     timeout-minutes: 15
+    
     steps:
-      - name: Checkout
+      - name: 🔐 Validar origen de la PR
+        id: security-check
+        run: |
+          echo "🔍 Validando seguridad de la PR..."
+          echo "Actor: ${{ github.actor }}"
+          echo "Repo: ${{ github.repository }}"
+          echo "Fork: ${{ github.event.pull_request.head.repo.fork }}"
+          echo "PR Number: ${{ github.event.pull_request.number }}"
+          
+          # Validar que no sea fork
+          if [ "${{ github.event.pull_request.head.repo.fork }}" = "true" ]; then
+            echo "❌ PRs de forks no permitidas en auto-review"
+            exit 1
+          fi
+          
+          # Validar actor permitido
+          ALLOWED_ACTORS='["sebitabravo","sebitabravo-code"]'
+          if ! echo "$ALLOWED_ACTORS" | jq -e --arg actor "${{ github.actor }}" 'contains([$actor])' > /dev/null; then
+            echo "❌ Actor ${{ github.actor }} no autorizado"
+            exit 1
+          fi
+          
+          echo "✅ Validaciones de seguridad pasadas"
+
+      - name: 📥 Checkout con permisos limitados
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 1
+          persist-credentials: false  # No persistir credenciales en disco
 
-      - name: Ejecutar reviewer assistant
+      - name: 📊 Auditoría - Registrar ejecución
+        run: |
+          AUDIT_LOG="/home/node/.openclaw/workspace-reviewer/memory/audit.log"
+          mkdir -p "$(dirname "$AUDIT_LOG")"
+          echo "$(date -Iseconds) | WORKFLOW_START | repo=${{ github.repository }} pr=${{ github.event.pull_request.number }} actor=${{ github.actor }} sha=${{ github.event.pull_request.head.sha }}" >> "$AUDIT_LOG"
+
+      - name: 🤖 Ejecutar reviewer assistant
+        id: review
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
@@ -34,9 +68,30 @@ jobs:
           PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
           OPENCLAW_REVIEWER_COMMAND: ${{ vars.OPENCLAW_REVIEWER_COMMAND }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 🔒 AISLAMIENTO: Variables de control
+          REVIEWER_MODE: "isolated"
+          ALLOWED_COMMANDS: "gh,git,jq"
         shell: bash
         run: |
           set -euo pipefail
+          
+          # Rate limiting check
+          RATE_CHECK_RESULT=$(bash /home/node/.openclaw/workspace-reviewer/scripts/rate-limit-check.sh "${{ github.repository }}" "${{ github.event.pull_request.number }}" || echo "RATE_LIMIT_EXCEEDED")
+          
+          if [ "$RATE_CHECK_RESULT" = "RATE_LIMIT_EXCEEDED" ]; then
+            echo "⚠️ Rate limit excedido para este repo/PR"
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "⚠️ **Rate Limit Alcanzado**
+
+El sistema de auto-review ha alcanzado el límite de ejecuciones. Por favor espera unos minutos antes de pushear más commits.
+
+**Límites actuales:**
+- 5 reviews por PR cada 10 minutos
+- 20 reviews por repo cada hora
+
+Esto previene abuso del sistema de review automático."
+            exit 0
+          fi
+          
           if [ -z "${OPENCLAW_REVIEWER_COMMAND:-}" ]; then
             echo "Falta variable OPENCLAW_REVIEWER_COMMAND"
             gh pr comment "$PR_NUMBER" --repo "$REPO" --body "⚠️ **Reviewer Automático - Setup Incompleto**
@@ -52,5 +107,18 @@ Una vez configurada, el reviewer se ejecutará automáticamente en los próximos
             exit 0
           fi
 
-          export PR_NUMBER REPO PR_URL PR_TITLE PR_AUTHOR PR_BASE_REF PR_HEAD_REF GH_TOKEN
+          export PR_NUMBER REPO PR_URL PR_TITLE PR_AUTHOR PR_BASE_REF PR_HEAD_REF GH_TOKEN REVIEWER_MODE ALLOWED_COMMANDS
           bash -lc "$OPENCLAW_REVIEWER_COMMAND"
+
+      - name: 📊 Auditoría - Registrar resultado
+        if: always()
+        run: |
+          AUDIT_LOG="/home/node/.openclaw/workspace-reviewer/memory/audit.log"
+          STATUS="${{ steps.review.outcome }}"
+          echo "$(date -Iseconds) | WORKFLOW_END | repo=${{ github.repository }} pr=${{ github.event.pull_request.number }} status=$STATUS" >> "$AUDIT_LOG"
+
+      - name: 🚨 Alertar si hay anomalías
+        if: failure()
+        run: |
+          # Detectar comportamiento anómalo
+          bash /home/node/.openclaw/workspace-reviewer/scripts/anomaly-detection.sh "${{ github.repository }}" "${{ github.event.pull_request.number }}"

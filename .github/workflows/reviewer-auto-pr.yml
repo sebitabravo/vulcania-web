@@ -1,0 +1,36 @@
+name: Reviewer Auto PR
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  reviewer:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: [self-hosted, openclaw-reviewer]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ejecutar reviewer assistant
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          OPENCLAW_REVIEWER_COMMAND: ${{ vars.OPENCLAW_REVIEWER_COMMAND }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENCLAW_REVIEWER_COMMAND:-}" ]; then
+            echo "Falta variable OPENCLAW_REVIEWER_COMMAND"
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "⚠️ Workflow activo, pero falta configurar la variable OPENCLAW_REVIEWER_COMMAND con el comando exacto para ejecutar tu assistant reviewer."
+            exit 0
+          fi
+
+          export PR_NUMBER REPO
+          bash -lc "$OPENCLAW_REVIEWER_COMMAND"

@@ -10,7 +10,10 @@ permissions:
 
 jobs:
   reviewer:
-    if: ${{ !github.event.pull_request.draft }}
+    if: |
+      !github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.fork == false &&
+      contains(fromJson('["sebitabravo","sebitabravo-code"]'), github.actor)
     runs-on: [self-hosted, openclaw-reviewer]
     timeout-minutes: 15
     steps:

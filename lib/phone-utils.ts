@@ -1,5 +1,5 @@
 export function normalizePhoneSpaces(value: string): string {
-  return value.replace(/\s/g, "")
+  return value.replace(/\s/g, "").trim()
 }
 
 export function isValidChileanMobile(telefono: string): { valid: boolean; message?: string } {
@@ -9,13 +9,11 @@ export function isValidChileanMobile(telefono: string): { valid: boolean; messag
     return { valid: false, message: "Debe ser un número móvil chileno (+56 9...)" }
   }
 
-  if (numeroLimpio.length < 10) {
-    return { valid: false, message: "El número es muy corto" }
-  }
-
-  const formatoMovil = /^\+56\s?9\s?[\d\s]+$/.test(telefono)
-  if (!formatoMovil) {
-    return { valid: false, message: "Formato inválido. Use +56 9 seguido de números" }
+  if (!/^\+569\d{8}$/.test(numeroLimpio)) {
+    return {
+      valid: false,
+      message: "Ingresa 8 dígitos después de +56 9 (ej.: +56 9 1234 5678)",
+    }
   }
 
   return { valid: true }

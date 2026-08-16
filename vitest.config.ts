@@ -14,11 +14,19 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       exclude: [
         'node_modules/',
+        '.next/',
+        'coverage/',
         '__tests__/',
         'scripts/',
         '**/*.d.ts',
         '**/*.config.*',
       ],
+      thresholds: {
+        statements: 80,
+        branches: 70,
+        functions: 90,
+        lines: 80,
+      },
     },
   },
   resolve: {

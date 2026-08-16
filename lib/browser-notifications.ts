@@ -1,23 +1,46 @@
-export async function ensureNotificationPermission(): Promise<NotificationPermission | "unsupported"> {
-  if (typeof window === "undefined" || !("Notification" in window)) {
-    return "unsupported"
-  }
+"use client";
 
-  if (Notification.permission === "default") {
-    return Notification.requestPermission()
-  }
+export type BrowserNotificationPermission = NotificationPermission | "unsupported";
+const permissionListeners = new Set<() => void>();
 
-  return Notification.permission
+export function subscribeNotificationPermission(listener: () => void): () => void {
+  permissionListeners.add(listener);
+  return () => permissionListeners.delete(listener);
 }
 
-export function notify(title: string, body: string) {
-  if (typeof window === "undefined" || !("Notification" in window)) return
-  if (Notification.permission !== "granted") return
-  if (document.visibilityState === "visible") return
+function emitPermissionChange() {
+  permissionListeners.forEach((listener) => listener());
+}
+
+export function isNotificationSupported(): boolean {
+  return typeof window !== "undefined" && typeof window.Notification === "function";
+}
+
+export function getNotificationPermission(): BrowserNotificationPermission {
+  if (!isNotificationSupported()) return "unsupported";
+  return window.Notification.permission;
+}
+
+export async function requestNotificationPermission(): Promise<BrowserNotificationPermission> {
+  const current = getNotificationPermission();
+  if (current === "unsupported" || current === "granted" || current === "denied") return current;
+  try {
+    const permission = await window.Notification.requestPermission();
+    emitPermissionChange();
+    return permission;
+  } catch {
+    return "denied";
+  }
+}
+
+export function notify(title: string, options: NotificationOptions = {}): boolean {
+  if (!isNotificationSupported() || document.visibilityState === "visible") return false;
+  if (window.Notification.permission !== "granted") return false;
 
   try {
-    new Notification(title, { body })
+    new window.Notification(title, options);
+    return true;
   } catch {
-    // no-op
+    return false;
   }
 }

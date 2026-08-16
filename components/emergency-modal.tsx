@@ -1,359 +1,206 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, AlertCircle, X, Volume2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { BellOff, ExternalLink, Volume2 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { supabase, type AlertaVolcan, type InformacionVolcan } from "@/lib/supabase";
-import { logger } from "@/lib/logger";
+import { AlertLevelBadge } from "@/components/alert-level-badge";
+import { useAlert } from "@/contexts/alert-context";
+import { APP_CONFIG } from "@/lib/app-config";
+import { setupAudioUnlock } from "@/lib/audio-unlock";
+import { EMERGENCY_CONTACTS, EMERGENCY_CONTACTS_SOURCE } from "@/lib/emergency-contacts";
+import { getAlertLevelConfig, isCriticalAlert } from "@/lib/alert-levels";
+import { startAlertSound, stopAlertSound } from "@/lib/alert-sound";
+import { formatLocalDateTime } from "@/lib/date-utils";
+import type { AlertaVolcan } from "@/lib/supabase";
 
-declare global {
-  interface Window {
-    webkitAudioContext: typeof AudioContext;
-  }
-}
+const SOUND_KEY = "vulcania-alert-sound";
 
-interface CriticalAlert extends AlertaVolcan {
-  informacion_volcan?: Pick<InformacionVolcan, "nombre">;
-}
-
-// Función para crear sonidos de alerta usando Web Audio API
-const createAlertSound = (type: "naranja" | "rojo") => {
-  logger.debug("🎵 Creando sonido de alerta:", type);
+function getInitialSoundEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  let stored: string | null = null;
   try {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-
-    const playBeep = (
-      frequency: number,
-      duration: number,
-      delay = 0,
-      volume = 0.5
-    ) => {
-      setTimeout(() => {
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        oscillator.frequency.setValueAtTime(
-          frequency,
-          audioContext.currentTime
-        );
-        oscillator.type = "triangle"; // Sonido más penetrante
-
-        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-        gainNode.gain.linearRampToValueAtTime(
-          volume,
-          audioContext.currentTime + 0.02
-        );
-        gainNode.gain.exponentialRampToValueAtTime(
-          0.01,
-          audioContext.currentTime + duration
-        );
-
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + duration);
-      }, delay);
-    };
-
-    if (type === "naranja") {
-      // Patrón más intenso para naranja
-      playBeep(600, 0.4, 0, 0.6);
-      playBeep(800, 0.4, 500, 0.6);
-      playBeep(1000, 0.4, 1000, 0.6);
-    } else if (type === "rojo") {
-      // Sirena más agresiva para rojo
-      for (let i = 0; i < 8; i++) {
-        playBeep(i % 2 === 0 ? 800 : 1400, 0.3, i * 200, 0.7);
-      }
-    }
-  } catch (error) {
-    logger.warn("No se pudo reproducir el sonido de alerta:", error);
+    stored = window.localStorage.getItem(SOUND_KEY);
+  } catch {
+    // Fall back to the accessibility preference when storage is unavailable.
   }
-};
+  const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  return stored ? stored === "on" : !reducedMotion;
+}
+
+function alertKey(alert: AlertaVolcan): string {
+  return `${alert.id}:${alert.ultima_actualizacion}:${alert.nivel_alerta}`;
+}
 
 export default function EmergencyModal() {
-  const [showModal, setShowModal] = useState(false);
-  const [alertDismissed, setAlertDismissed] = useState(false);
-  // ELIMINAMOS soundEnabled e isPlayingSound - el sonido SIEMPRE debe sonar
-  const [currentAlert, setCurrentAlert] = useState<CriticalAlert | null>(null);
-  const [lastAlertId, setLastAlertId] = useState<string | null>(null);
-  const [soundInterval, setSoundInterval] = useState<NodeJS.Timeout | null>(
-    null
-  );
+  const { alerta } = useAlert();
+  const [currentAlert, setCurrentAlert] = useState<AlertaVolcan | null>(null);
+  const [open, setOpen] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(getInitialSoundEnabled);
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const activeKeyRef = useRef<string | null>(null);
+  const acknowledgeButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Función para detener sonido (solo cuando se cierra la modal)
-  const stopAlertSound = useCallback(() => {
-    logger.debug("🔇 Deteniendo sonido de alerta");
-    if (soundInterval) {
-      clearInterval(soundInterval);
-      setSoundInterval(null);
-    }
-  }, [soundInterval]);
+  useEffect(() => setupAudioUnlock(), []);
 
-  // Función para reproducir sonido OBLIGATORIO y continuo
-  const playAlertSound = useCallback((nivel: "naranja" | "rojo") => {
-    logger.debug("🎵 Iniciando sonido PERSISTENTE:", nivel);
-
-    // Reproducir sonido inmediatamente
-    createAlertSound(nivel);
-
-    // Limpiar intervalo anterior si existe
-    if (soundInterval) {
-      clearInterval(soundInterval);
-    }
-
-    // Repetir sonido indefinidamente hasta que se cierre la modal
-    const interval = setInterval(
-      () => {
-        if (showModal && !alertDismissed) {
-          logger.debug("🔄 Continuando sonido de emergencia...");
-          createAlertSound(nivel);
-        } else {
-          logger.debug("🔇 Deteniendo sonido - modal cerrada");
-          clearInterval(interval);
-        }
-      },
-      nivel === "naranja" ? 4000 : 3000 // Más frecuente para rojo
-    );
-
-    setSoundInterval(interval);
-  }, [alertDismissed, showModal, soundInterval]);
-
-  // Función para forzar emergencia (para pruebas)
-  const forceEmergency = () => {
-    logger.debug("🚨 FORZANDO EMERGENCIA!");
-    const fakeAlert = {
-      nivel_alerta: "rojo",
-      descripcion:
-        "🚨 EMERGENCIA DE PRUEBA - Evacuación inmediata obligatoria.",
-      informacion_volcan: { nombre: "Villarrica" },
-      ultima_actualizacion: new Date().toISOString(),
-    };
-
-    // Generar nuevo ID para forzar que se muestre
-    const alertId = `${fakeAlert.ultima_actualizacion}-${fakeAlert.nivel_alerta}`;
-    setLastAlertId(alertId);
-    setCurrentAlert(fakeAlert);
-    setAlertDismissed(false);
-    setShowModal(true);
-
-    setTimeout(() => {
-      playAlertSound("rojo");
-    }, 500);
-  };
-
-  // Verificar estado de alerta cada 5 segundos
   useEffect(() => {
-    const checkAlert = async () => {
-      if (!supabase) return;
+    const handleAlert = (alert: AlertaVolcan | null) => {
+      if (!alert || !isCriticalAlert(alert.nivel_alerta)) {
+        activeKeyRef.current = null;
+        setCurrentAlert(null);
+        setOpen(false);
+        stopAlertSound();
+        return;
+      }
 
-      try {
-        const { data: alerta } = await supabase
-          .from("alertas_volcan")
-          .select(
-            `
-            *,
-            informacion_volcan (nombre)
-          `
-          )
-          .order("ultima_actualizacion", { ascending: false })
-          .limit(1)
-          .single();
-
-        if (
-          alerta &&
-          (alerta.nivel_alerta === "naranja" || alerta.nivel_alerta === "rojo")
-        ) {
-          // Crear ID único para esta alerta basado en timestamp y nivel
-          const alertId = `${alerta.ultima_actualizacion}-${alerta.nivel_alerta}`;
-
-          // Si es una nueva alerta (diferente ID), resetear dismissal
-          if (lastAlertId !== alertId) {
-            logger.debug(
-              "🆕 Nueva alerta detectada:",
-              alerta.nivel_alerta,
-              "ID:",
-              alertId
-            );
-            setLastAlertId(alertId);
-            setAlertDismissed(false);
-            setCurrentAlert(alerta);
-            setShowModal(true);
-
-            setTimeout(() => {
-              playAlertSound(alerta.nivel_alerta as "naranja" | "rojo");
-            }, 1000);
-          } else if (!alertDismissed && !showModal) {
-            // Si es la misma alerta pero no está mostrada y no fue dismissida
-            logger.debug(
-              "🚨 Reactivando alerta existente:",
-              alerta.nivel_alerta
-            );
-            setCurrentAlert(alerta);
-            setShowModal(true);
-
-            setTimeout(() => {
-              playAlertSound(alerta.nivel_alerta as "naranja" | "rojo");
-            }, 1000);
-          }
-        } else {
-          // Si no hay alerta crítica, limpiar estados
-          if (showModal) {
-            logger.debug("✅ Alerta ya no es crítica, cerrando modal");
-            setShowModal(false);
-            stopAlertSound();
-          }
-        }
-      } catch (error) {
-        logger.error("Error verificando alerta:", error);
+      const nextKey = alertKey(alert);
+      const isNew = activeKeyRef.current !== nextKey;
+      activeKeyRef.current = nextKey;
+      setCurrentAlert(alert);
+      if (isNew) {
+        setDismissedKey(null);
+        setOpen(true);
+      } else if (dismissedKey !== nextKey) {
+        setOpen(true);
       }
     };
+    handleAlert(alerta);
+  }, [alerta, dismissedKey]);
 
-    checkAlert();
-    const interval = setInterval(checkAlert, 5000);
-
-    return () => {
-      clearInterval(interval);
-      stopAlertSound();
-    };
-  }, [alertDismissed, showModal, lastAlertId, playAlertSound, stopAlertSound]); // Agregar dependencias relevantes
-
-  // Cleanup al desmontar
   useEffect(() => {
-    return () => {
+    if (!open || !currentAlert || !isCriticalAlert(currentAlert.nivel_alerta) || !soundEnabled) {
       stopAlertSound();
-    };
-  }, [stopAlertSound]);
+      return;
+    }
+    return startAlertSound(currentAlert.nivel_alerta);
+  }, [currentAlert, open, soundEnabled]);
 
-  if (!showModal || !currentAlert) return null;
+  const acknowledge = () => {
+    if (currentAlert) setDismissedKey(alertKey(currentAlert));
+    setOpen(false);
+    stopAlertSound();
+  };
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    try {
+      window.localStorage.setItem(SOUND_KEY, next ? "on" : "off");
+    } catch {
+      // The mute choice remains active for the current render.
+    }
+    if (!next) stopAlertSound();
+  };
+
+  if (!currentAlert || !isCriticalAlert(currentAlert.nivel_alerta)) return null;
+
+  const isRed = currentAlert.nivel_alerta === "rojo";
+  const levelConfig = getAlertLevelConfig(currentAlert.nivel_alerta);
+  const LevelIcon = levelConfig.icon;
+  const volcanoName = currentAlert.informacion_volcan?.nombre || APP_CONFIG.defaultVolcanoName || "Villarrica";
+  const isSimulation = APP_CONFIG.demoMode || currentAlert.es_simulacion === true;
 
   return (
-    <>
-      {/* Botones de prueba - solo en desarrollo */}
-      {process.env.NODE_ENV === "development" && (
-        <div className="fixed top-4 right-4 z-40 space-y-2">
-          <Button
-            onClick={forceEmergency}
-            className="bg-red-600 hover:bg-red-700 text-white font-bold animate-pulse block w-full"
-          >
-            🚨 Test Emergency
-          </Button>
-          <Button
-            onClick={() => {
-              logger.debug("✅ Simulando vuelta a normal");
-              setShowModal(false);
-              setAlertDismissed(false); // Permitir que nuevas alertas se muestren
-              stopAlertSound();
-              setCurrentAlert(null);
-              setLastAlertId(null);
-            }}
-            className="bg-green-600 hover:bg-green-700 text-white font-bold block w-full"
-          >
-            ✅ Reset to Normal
-          </Button>
-        </div>
-      )}
-
-      {/* Modal de Emergencia */}
-      <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-        <div className="bg-gradient-to-br from-red-950 to-black rounded-3xl p-8 max-w-lg w-full shadow-2xl border-2 border-red-500 animate-pulse">
-          {/* Barra de estado sonoro - SIEMPRE activa en emergencia */}
-          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 via-orange-500 to-red-500 animate-pulse rounded-t-3xl"></div>
-
-          <div className="relative">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-3">
-                <div className="p-4 rounded-full bg-red-600 animate-bounce">
-                  <AlertCircle className="h-8 w-8 text-white" />
+    <Dialog open={open} onOpenChange={(nextOpen) => (nextOpen ? setOpen(true) : acknowledge())}>
+      <DialogContent
+        role="alertdialog"
+        aria-modal="true"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          acknowledgeButtonRef.current?.focus();
+        }}
+        className="max-h-[92vh] overflow-y-auto border-red-400/50 bg-[#160c0f] p-0 text-red-50 shadow-[0_24px_100px_rgba(239,68,68,0.25)] sm:max-w-xl"
+      >
+        <div className="status-stripes border-b border-red-300/30 px-6 py-7 sm:px-8">
+          <DialogHeader className="text-left">
+            <div className="flex items-start justify-between gap-4 pr-8">
+              <div className="flex items-start gap-4">
+                <div className="rounded-xl border border-red-200/30 bg-red-400/20 p-3 text-red-100">
+                  <LevelIcon className="size-7" aria-hidden="true" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-bold text-white">
-                    {currentAlert.nivel_alerta === "rojo"
-                      ? "🚨 EMERGENCIA VOLCÁNICA"
-                      : "⚠️ ALERTA VOLCÁNICA"}
-                  </h3>
-                  <p className="text-red-400 text-sm">
-                    Nivel: {currentAlert.nivel_alerta.toUpperCase()}
-                  </p>
-                  <p className="text-red-400 text-sm animate-pulse font-semibold">
-                    🔊 ALERTA SONORA CONTINUA
-                  </p>
+                  <DialogTitle className="font-display text-2xl text-red-50 sm:text-3xl">
+                    {levelConfig.label} volcánica
+                  </DialogTitle>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <AlertLevelBadge level={currentAlert.nivel_alerta} />
+                    {isSimulation ? <span className="rounded-full border border-primary/40 bg-primary/15 px-2 py-1 text-[0.68rem] font-medium text-primary">{APP_CONFIG.demoMode ? "Simulación demo" : "Simulación de instalación"}</span> : null}
+                    <span className="text-xs text-red-100/70">Volcán {volcanoName}</span>
+                  </div>
                 </div>
               </div>
-              <button
-                onClick={() => {
-                  logger.debug("❌ Cerrando modal de emergencia");
-                  setShowModal(false);
-                  setAlertDismissed(true);
-                  stopAlertSound();
-                }}
-                className="text-gray-400 hover:text-white transition-colors p-2 rounded-full hover:bg-gray-800"
-              >
-                <X className="h-6 w-6" />
-              </button>
             </div>
+          </DialogHeader>
+        </div>
 
-            <Alert className="mb-6 bg-red-900/30 border-red-600 border-2">
-              <AlertTriangle className="h-5 w-5 text-red-400" />
-              <AlertTitle className="text-white text-lg font-bold">
-                Volcán {currentAlert.informacion_volcan?.nombre || "Villarrica"}
-              </AlertTitle>
-              <AlertDescription className="text-red-200">
-                {currentAlert.descripcion}
-              </AlertDescription>
-            </Alert>
+        <div className="space-y-5 px-6 py-6 sm:px-8">
+          <DialogDescription className="text-base leading-7 text-red-50/90">
+            {currentAlert.descripcion}
+          </DialogDescription>
 
-            <div className="space-y-4 mb-6">
-              <div className="bg-red-900/50 border border-red-500 rounded-xl p-4">
-                <p className="text-red-300 font-bold text-center">
-                  🚨 EVACUACIÓN INMEDIATA REQUERIDA
-                </p>
-                <p className="text-red-300 text-center">
-                  Sigue las rutas de evacuación establecidas
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              {/* Información sobre el sonido continuo */}
-              <div className="flex items-center justify-center space-x-4 p-4 bg-red-900/50 rounded-xl border border-red-500">
-                <div className="flex items-center space-x-2 text-red-300">
-                  <Volume2 className="h-4 w-4 animate-pulse" />
-                  <span className="text-sm font-medium">
-                    🔊 La alerta sonora continuará hasta que cierres esta
-                    ventana
-                  </span>
-                </div>
-              </div>
-
-              <Button
-                onClick={() => {
-                  logger.debug("✅ Cerrando modal - Entendido");
-                  setShowModal(false);
-                  setAlertDismissed(true);
-                  stopAlertSound();
-                }}
-                variant="outline"
-                className="w-full border-2 border-gray-500 text-white hover:bg-gray-800 rounded-xl bg-gray-900/50 shadow-lg"
-                size="lg"
-              >
-                He Leído y Entiendo la Alerta
-              </Button>
-            </div>
-
-            <p className="text-xs text-gray-400 mt-6 text-center leading-relaxed">
-              Mantente informado a través de canales oficiales.
-              <br />
-              <span className="text-red-400 font-medium">
-                En caso de emergencia llama al 133 (Bomberos) o 131
-                (Carabineros)
-              </span>
+          <div className="rounded-xl border border-red-300/30 bg-red-400/10 p-4">
+            <p className="font-display text-lg font-semibold text-red-50">
+              {isRed ? "Sigue las instrucciones de evacuación." : "Prepárate para una posible evacuación."}
+            </p>
+            <p className="mt-1 text-sm leading-6 text-red-100/75">
+              Confirma tu ruta, mantén comunicación con tu familia y usa solo información de canales oficiales.
             </p>
           </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-red-50">Números de emergencia</h3>
+              <span className="text-xs text-red-100/60">Fuente: {EMERGENCY_CONTACTS_SOURCE}</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {EMERGENCY_CONTACTS.map((contact) => (
+                <a
+                  key={contact.number}
+                  href={contact.href}
+                  className="rounded-lg border border-red-200/20 bg-black/20 p-3 transition-colors hover:bg-red-300/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
+                >
+                  <span className="block font-mono text-xl font-semibold text-red-50">{contact.number}</span>
+                  <span className="mt-1 block text-xs text-red-100/70">{contact.label}</span>
+                </a>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-red-200/15 pt-4 text-xs text-red-100/60">
+            <span>Actualizado: {formatLocalDateTime(currentAlert.ultima_actualizacion)} hora Chile · Fuente: {currentAlert.fuente || "No declarada"}</span>
+            <button
+              type="button"
+              onClick={toggleSound}
+              className="inline-flex min-h-11 items-center gap-2 rounded-md px-2 text-red-100/80 hover:bg-red-200/10 hover:text-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-200"
+              aria-pressed={soundEnabled}
+            >
+              {soundEnabled ? <Volume2 className="size-4" aria-hidden="true" /> : <BellOff className="size-4" aria-hidden="true" />}
+              {soundEnabled ? "Silenciar alerta" : "Activar sonido"}
+            </button>
+          </div>
         </div>
-      </div>
-    </>
+
+        <DialogFooter className="flex-col border-t border-red-200/15 bg-black/20 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
+          <a
+            href="https://www.senapred.cl/"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-11 items-center gap-2 text-sm text-red-100/75 underline-offset-4 hover:text-red-50 hover:underline"
+          >
+            Ver canales oficiales <ExternalLink className="size-3.5" aria-hidden="true" />
+          </a>
+          <Button ref={acknowledgeButtonRef} onClick={acknowledge} size="lg" className="w-full bg-red-500 text-white hover:bg-red-400 sm:w-auto">
+            He leído y entiendo
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

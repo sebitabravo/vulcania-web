@@ -1,6 +1,6 @@
 /**
  * Tests para la configuración de la aplicación
- * 
+ *
  * @vitest-environment node
  */
 
@@ -43,5 +43,38 @@ describe('APP_CONFIG', () => {
     const { APP_CONFIG } = await import('../lib/app-config')
     expect(typeof APP_CONFIG.demoPhone).toBe('string')
     expect(APP_CONFIG.demoPhone.length).toBeGreaterThan(0)
+  })
+
+  it('habilita el panel demo por defecto para que el flujo insignia sea demostrable', async () => {
+    process.env.NEXT_PUBLIC_DEMO_MODE = 'true'
+    delete process.env.NEXT_PUBLIC_ENABLE_ADMIN_PANEL
+    const { APP_CONFIG } = await import('../lib/app-config')
+    expect(APP_CONFIG.enableAdminPanel).toBe(true)
+  })
+
+  it('uses one resolver for explicit demo mode and Supabase fallback', async () => {
+    const { resolveDemoMode } = await import('../lib/app-config')
+
+    expect(resolveDemoMode({
+      NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+    })).toBe(false)
+    expect(resolveDemoMode({
+      NEXT_PUBLIC_DEMO_MODE: 'true',
+      NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
+    })).toBe(true)
+    expect(resolveDemoMode({})).toBe(true)
+  })
+
+  it('reads the default runtime configuration from public environment variables', async () => {
+    process.env.NEXT_PUBLIC_DEMO_MODE = 'false'
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://project.supabase.co'
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key'
+
+    const { APP_CONFIG, resolveDemoMode } = await import('../lib/app-config')
+
+    expect(APP_CONFIG.demoMode).toBe(false)
+    expect(resolveDemoMode()).toBe(false)
   })
 })

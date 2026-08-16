@@ -1,485 +1,601 @@
--- =====================================
--- VULCANIA - VOLCANO MONITORING SYSTEM
--- =====================================
+-- Vulcania — instalación segura para Supabase
+--
+-- Ejecutar en un proyecto Supabase nuevo desde SQL Editor. El modo completo
+-- depende de Supabase Auth: nunca uses esta base como sustituto de OTP.
+-- La demo offline no necesita ejecutar este archivo.
 
--- =====================================
--- 1. CREATE DATABASE STRUCTURE
--- =====================================
+create extension if not exists pgcrypto;
 
--- Crear tabla de usuarios
-CREATE TABLE usuarios (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    nombre VARCHAR(255) NOT NULL,
-    telefono VARCHAR(20) UNIQUE NOT NULL,
-    fecha_creacion TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+-- ---------------------------------------------------------------------------
+-- 1. Modelo de datos
+-- ---------------------------------------------------------------------------
+
+create table if not exists public.usuarios (
+  id uuid primary key references auth.users(id) on delete cascade,
+  nombre text not null check (char_length(nombre) between 1 and 120),
+  telefono text unique,
+  rol text not null default 'user' check (rol in ('user', 'operator', 'admin')),
+  fecha_creacion timestamptz not null default now()
 );
 
--- Crear tabla para información del volcán
-CREATE TABLE informacion_volcan (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    nombre VARCHAR(100) NOT NULL,
-    codigo VARCHAR(10) NOT NULL,
-    altura_msnm INTEGER,
-    latitud DECIMAL(10, 8) NOT NULL,
-    longitud DECIMAL(11, 8) NOT NULL,
-    descripcion TEXT,
-    activo BOOLEAN DEFAULT TRUE
+create table if not exists public.informacion_volcan (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null,
+  codigo text not null unique,
+  altura_msnm integer,
+  latitud numeric(10, 8) not null check (latitud between -90 and 90),
+  longitud numeric(11, 8) not null check (longitud between -180 and 180),
+  descripcion text,
+  activo boolean not null default true
 );
 
--- Crear tabla para parámetros del volcán
-CREATE TABLE parametros_volcan (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    sismos_24h INTEGER NOT NULL,
-    temperatura_crater VARCHAR(20) NOT NULL,
-    emision_so2 VARCHAR(30) NOT NULL,
-    deformacion VARCHAR(20) NOT NULL,
-    fecha_actualizacion TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+create table if not exists public.parametros_volcan (
+  id uuid primary key default gen_random_uuid(),
+  sismos_24h integer not null check (sismos_24h >= 0),
+  temperatura_crater text not null,
+  emision_so2 text not null,
+  deformacion text not null,
+  fuente text not null default 'Fuente no declarada',
+  es_simulacion boolean not null default false,
+  fecha_actualizacion timestamptz not null default now()
 );
 
--- Crear tabla para configuraciones de niveles de alerta
-CREATE TABLE configuraciones_nivel (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    nivel VARCHAR(20) NOT NULL UNIQUE CHECK (nivel IN ('verde', 'amarillo', 'naranja', 'rojo')),
-    color VARCHAR(20) NOT NULL,
-    text_color VARCHAR(20) NOT NULL,
-    bg_gradient VARCHAR(100) NOT NULL,
-    icon_name VARCHAR(50) NOT NULL,
-    label VARCHAR(50) NOT NULL,
-    descripcion_corta VARCHAR(100) NOT NULL,
-    urgencia VARCHAR(20) NOT NULL,
-    pulse_color VARCHAR(50) NOT NULL
+create table if not exists public.configuraciones_nivel (
+  id uuid primary key default gen_random_uuid(),
+  nivel text not null unique check (nivel in ('verde', 'amarillo', 'naranja', 'rojo')),
+  color text not null,
+  text_color text not null,
+  bg_gradient text not null,
+  icon_name text not null,
+  label text not null,
+  descripcion_corta text not null,
+  urgencia text not null,
+  pulse_color text not null
 );
 
--- Crear tabla de alertas del volcán
-CREATE TABLE alertas_volcan (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    nivel_alerta VARCHAR(20) NOT NULL CHECK (nivel_alerta IN ('verde', 'amarillo', 'naranja', 'rojo')),
-    descripcion TEXT NOT NULL,
-    ultima_actualizacion TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    parametros_id UUID REFERENCES parametros_volcan(id),
-    volcan_id UUID REFERENCES informacion_volcan(id)
+create table if not exists public.alertas_volcan (
+  id uuid primary key default gen_random_uuid(),
+  nivel_alerta text not null check (nivel_alerta in ('verde', 'amarillo', 'naranja', 'rojo')),
+  descripcion text not null,
+  fuente text not null default 'Fuente no declarada',
+  referencia text,
+  es_simulacion boolean not null default false,
+  ultima_actualizacion timestamptz not null default now(),
+  parametros_id uuid references public.parametros_volcan(id),
+  volcan_id uuid references public.informacion_volcan(id)
 );
 
--- Crear tabla para recomendaciones por nivel
-CREATE TABLE recomendaciones_nivel (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    nivel VARCHAR(20) NOT NULL REFERENCES configuraciones_nivel(nivel),
-    recomendacion TEXT NOT NULL,
-    orden INTEGER NOT NULL
+create table if not exists public.recomendaciones_nivel (
+  id uuid primary key default gen_random_uuid(),
+  nivel text not null references public.configuraciones_nivel(nivel),
+  recomendacion text not null,
+  orden integer not null check (orden > 0),
+  unique (nivel, orden)
 );
 
--- Crear tabla para zonas de exclusión
-CREATE TABLE zonas_exclusion (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    nivel_alerta VARCHAR(20) NOT NULL REFERENCES configuraciones_nivel(nivel),
-    radio_km INTEGER NOT NULL,
-    descripcion TEXT NOT NULL
+create table if not exists public.zonas_exclusion (
+  id uuid primary key default gen_random_uuid(),
+  nivel_alerta text not null unique references public.configuraciones_nivel(nivel),
+  radio_km integer not null check (radio_km >= 0),
+  descripcion text not null
 );
 
--- Crear tabla para acciones requeridas por nivel
-CREATE TABLE acciones_requeridas (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    nivel_alerta VARCHAR(20) NOT NULL REFERENCES configuraciones_nivel(nivel),
-    evacuar_zona_riesgo BOOLEAN DEFAULT FALSE,
-    activar_red_comunitaria BOOLEAN DEFAULT FALSE,
-    revisar_rutas_evacuacion BOOLEAN DEFAULT FALSE,
-    preparar_kit_emergencia BOOLEAN DEFAULT FALSE
+create table if not exists public.acciones_requeridas (
+  id uuid primary key default gen_random_uuid(),
+  nivel_alerta text not null unique references public.configuraciones_nivel(nivel),
+  evacuar_zona_riesgo boolean not null default false,
+  activar_red_comunitaria boolean not null default false,
+  revisar_rutas_evacuacion boolean not null default false,
+  preparar_kit_emergencia boolean not null default false
 );
 
--- Crear tabla de puntos de encuentro
-CREATE TABLE puntos_encuentro (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    nombre VARCHAR(255) NOT NULL,
-    direccion TEXT NOT NULL,
-    latitud DECIMAL(10, 8) NOT NULL,
-    longitud DECIMAL(11, 8) NOT NULL,
-    capacidad INTEGER NOT NULL,
-    seguridad_nivel INTEGER NOT NULL CHECK (seguridad_nivel BETWEEN 1 AND 5),
-    tiempo_aprox_pie INTEGER NOT NULL, -- en minutos
-    ocupado BOOLEAN DEFAULT FALSE
+create table if not exists public.puntos_encuentro (
+  id uuid primary key default gen_random_uuid(),
+  nombre text not null unique,
+  direccion text not null,
+  latitud numeric(10, 8) not null check (latitud between -90 and 90),
+  longitud numeric(11, 8) not null check (longitud between -180 and 180),
+  capacidad integer not null check (capacidad >= 0),
+  seguridad_nivel integer not null check (seguridad_nivel between 1 and 5),
+  tiempo_aprox_pie integer not null check (tiempo_aprox_pie >= 0),
+  ocupado boolean not null default false
 );
 
--- Crear tabla de avisos de la comunidad
-CREATE TABLE avisos_comunidad (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    usuario_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
-    mensaje TEXT NOT NULL,
-    fecha_creacion TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    estado VARCHAR(20) DEFAULT 'activo' CHECK (estado IN ('activo', 'inactivo', 'eliminado'))
+create table if not exists public.avisos_comunidad (
+  id uuid primary key default gen_random_uuid(),
+  usuario_id uuid not null references public.usuarios(id) on delete cascade,
+  autor_nombre text not null default 'Vecino',
+  mensaje text not null check (char_length(mensaje) between 1 and 6000000),
+  fecha_creacion timestamptz not null default now(),
+  estado text not null default 'activo' check (estado in ('activo', 'inactivo', 'eliminado'))
 );
 
--- Crear tabla de mensajes de chat
-CREATE TABLE mensajes_chat (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    emisor_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
-    receptor_id UUID REFERENCES usuarios(id) ON DELETE CASCADE,
-    mensaje TEXT NOT NULL,
-    fecha_envio TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    leido BOOLEAN DEFAULT FALSE,
-    fecha_lectura TIMESTAMP WITH TIME ZONE
+create table if not exists public.mensajes_chat (
+  id uuid primary key default gen_random_uuid(),
+  emisor_id uuid not null references public.usuarios(id) on delete cascade,
+  receptor_id uuid not null references public.usuarios(id) on delete cascade,
+  mensaje text not null check (char_length(mensaje) between 1 and 6000000),
+  fecha_envio timestamptz not null default now(),
+  leido boolean not null default false,
+  fecha_lectura timestamptz,
+  check (emisor_id <> receptor_id)
 );
 
--- Crear tabla de logs del sistema
-CREATE TABLE logs_sistema (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    tabla VARCHAR(100) NOT NULL,
-    accion VARCHAR(50) NOT NULL,
-    registro_id TEXT NOT NULL,
-    datos_anteriores JSONB,
-    datos_nuevos JSONB,
-    fecha_cambio TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+create table if not exists public.logs_sistema (
+  id uuid primary key default gen_random_uuid(),
+  actor_id uuid references auth.users(id),
+  tabla text not null,
+  accion text not null,
+  registro_id text not null,
+  datos_anteriores jsonb,
+  datos_nuevos jsonb,
+  fecha_cambio timestamptz not null default now()
 );
 
--- =====================================
--- 2. CREATE INDEXES
--- =====================================
+create index if not exists idx_alertas_volcan_fecha on public.alertas_volcan (ultima_actualizacion desc);
+create index if not exists idx_alertas_volcan_parametros on public.alertas_volcan (parametros_id);
+create index if not exists idx_alertas_volcan_volcan on public.alertas_volcan (volcan_id);
+create index if not exists idx_avisos_comunidad_fecha on public.avisos_comunidad (fecha_creacion desc);
+create index if not exists idx_mensajes_chat_fecha on public.mensajes_chat (fecha_envio desc);
+create index if not exists idx_mensajes_chat_usuarios on public.mensajes_chat (emisor_id, receptor_id, fecha_envio desc);
+create index if not exists idx_mensajes_no_leidos on public.mensajes_chat (receptor_id, emisor_id, leido) where leido = false;
+create index if not exists idx_puntos_encuentro_ubicacion on public.puntos_encuentro (latitud, longitud);
 
-CREATE INDEX idx_alertas_volcan_fecha ON alertas_volcan(ultima_actualizacion DESC);
-CREATE INDEX idx_avisos_comunidad_fecha ON avisos_comunidad(fecha_creacion DESC);
-CREATE INDEX idx_mensajes_chat_fecha ON mensajes_chat(fecha_envio DESC);
-CREATE INDEX idx_mensajes_chat_usuarios ON mensajes_chat(emisor_id, receptor_id);
-CREATE INDEX idx_mensajes_no_leidos ON mensajes_chat (receptor_id, emisor_id, leido) WHERE leido IS FALSE OR leido IS NULL;
-CREATE INDEX idx_recomendaciones_nivel_orden ON recomendaciones_nivel(nivel, orden);
-CREATE INDEX idx_puntos_encuentro_ubicacion ON puntos_encuentro(latitud, longitud);
-CREATE INDEX idx_puntos_encuentro_ocupado ON puntos_encuentro(ocupado);
+-- La vista expone solo nombres/roles, nunca teléfonos.
+create or replace view public.perfiles_publicos as
+select id, nombre, rol, fecha_creacion
+from public.usuarios;
 
--- =====================================
--- 3. CREATE FUNCTIONS
--- =====================================
+-- ---------------------------------------------------------------------------
+-- 2. Auth, roles y auditoría
+-- ---------------------------------------------------------------------------
 
--- Función para cambiar rápidamente el nivel de alerta
-CREATE OR REPLACE FUNCTION cambiar_nivel_alerta(nuevo_nivel VARCHAR(20))
-RETURNS VOID AS $$
-DECLARE
-    volcan_id_var UUID;
-    parametros_id_var UUID;
-    nuevos_parametros RECORD;
-BEGIN
-    -- Obtener el ID del volcán
-    SELECT id INTO volcan_id_var FROM informacion_volcan LIMIT 1;
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.usuarios (id, nombre, telefono)
+  values (
+    new.id,
+    coalesce(nullif(new.raw_user_meta_data ->> 'name', ''), 'Usuario Vulcania'),
+    coalesce(new.phone, 'auth-' || left(new.id::text, 12))
+  )
+  on conflict (id) do update
+    set telefono = excluded.telefono;
+  return new;
+end;
+$$;
 
-    -- Generar parámetros según el nivel
-    CASE nuevo_nivel
-        WHEN 'verde' THEN
-            nuevos_parametros := (
-                floor(random() * 20 + 5)::INTEGER,                    -- sismos_24h: 5-25
-                (floor(random() * 100 + 700) || '°C')::VARCHAR(20),   -- temperatura: 700-800°C
-                (floor(random() * 500 + 800) || ' ton/día')::VARCHAR(30), -- emision_so2: 800-1300
-                (round((random() * 1 + 0.5)::numeric, 1) || ' cm/mes')::VARCHAR(20) -- deformacion: 0.5-1.5
-            );
-        WHEN 'amarillo' THEN
-            nuevos_parametros := (
-                floor(random() * 30 + 30)::INTEGER,                   -- sismos_24h: 30-60
-                (floor(random() * 150 + 800) || '°C')::VARCHAR(20),   -- temperatura: 800-950°C
-                (floor(random() * 800 + 1000) || ' ton/día')::VARCHAR(30), -- emision_so2: 1000-1800
-                (round((random() * 2 + 1.5)::numeric, 1) || ' cm/mes')::VARCHAR(20) -- deformacion: 1.5-3.5
-            );
-        WHEN 'naranja' THEN
-            nuevos_parametros := (
-                floor(random() * 50 + 60)::INTEGER,                   -- sismos_24h: 60-110
-                (floor(random() * 200 + 950) || '°C')::VARCHAR(20),   -- temperatura: 950-1150°C
-                (floor(random() * 1500 + 1800) || ' ton/día')::VARCHAR(30), -- emision_so2: 1800-3300
-                (round((random() * 3 + 3)::numeric, 1) || ' cm/mes')::VARCHAR(20) -- deformacion: 3-6
-            );
-        WHEN 'rojo' THEN
-            nuevos_parametros := (
-                floor(random() * 100 + 100)::INTEGER,                 -- sismos_24h: 100-200
-                (floor(random() * 300 + 1100) || '°C')::VARCHAR(20),  -- temperatura: 1100-1400°C
-                (floor(random() * 5000 + 3000) || ' ton/día')::VARCHAR(30), -- emision_so2: 3000-8000
-                (round((random() * 5 + 5)::numeric, 1) || ' cm/mes')::VARCHAR(20) -- deformacion: 5-10
-            );
-        ELSE
-            RAISE EXCEPTION 'Nivel de alerta no válido: %', nuevo_nivel;
-    END CASE;
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
 
-    -- Insertar nuevos parámetros
-    INSERT INTO parametros_volcan (sismos_24h, temperatura_crater, emision_so2, deformacion)
-    VALUES (nuevos_parametros.f1, nuevos_parametros.f2, nuevos_parametros.f3, nuevos_parametros.f4)
-    RETURNING id INTO parametros_id_var;
+create or replace function public.is_operator()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.usuarios
+    where id = auth.uid() and rol in ('operator', 'admin')
+  );
+$$;
 
-    -- Insertar nueva alerta
-    INSERT INTO alertas_volcan (nivel_alerta, descripcion, parametros_id, volcan_id)
-    VALUES (
-        nuevo_nivel,
-        CASE nuevo_nivel
-            WHEN 'verde' THEN 'Actividad volcánica normal. Parámetros dentro de los rangos esperados. Monitoreo rutinario activo.'
-            WHEN 'amarillo' THEN 'Actividad volcánica moderada. Se registra actividad sísmica constante y emisiones de gases. Temperatura del cráter en aumento. Monitoreo continuo activo.'
-            WHEN 'naranja' THEN 'Actividad volcánica alta. Incremento significativo en todos los parámetros. Posible escalamiento a emergencia. Evacuación preventiva recomendada.'
-            WHEN 'rojo' THEN '🚨 EMERGENCIA VOLCÁNICA 🚨 Erupción inminente o en curso. Evacuación inmediata obligatoria. Peligro extremo para la población.'
-        END,
-        parametros_id_var,
-        volcan_id_var
+create or replace function public.set_author_name()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  select nombre into new.autor_nombre
+  from public.usuarios
+  where id = new.usuario_id;
+  return new;
+end;
+$$;
+
+drop trigger if exists trigger_set_author_name on public.avisos_comunidad;
+create trigger trigger_set_author_name
+  before insert or update on public.avisos_comunidad
+  for each row execute procedure public.set_author_name();
+
+create or replace function public.log_alert_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.logs_sistema (actor_id, tabla, accion, registro_id, datos_anteriores, datos_nuevos)
+  values (
+    auth.uid(), 'alertas_volcan', tg_op, coalesce(new.id, old.id)::text,
+    case when tg_op = 'INSERT' then null else to_jsonb(old) end,
+    case when tg_op = 'DELETE' then null else to_jsonb(new) end
+  );
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trigger_log_alert_change on public.alertas_volcan;
+create trigger trigger_log_alert_change
+  after insert or update or delete on public.alertas_volcan
+  for each row execute procedure public.log_alert_change();
+
+create or replace function public.log_point_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.ocupado is distinct from new.ocupado then
+    insert into public.logs_sistema (actor_id, tabla, accion, registro_id, datos_anteriores, datos_nuevos)
+    values (
+      auth.uid(), 'puntos_encuentro', 'UPDATE', new.id::text,
+      jsonb_build_object('ocupado', old.ocupado),
+      jsonb_build_object('ocupado', new.ocupado)
     );
+  end if;
+  return new;
+end;
+$$;
 
-    RAISE NOTICE 'Nivel de alerta cambiado a: %', nuevo_nivel;
-END;
-$$ LANGUAGE plpgsql;
+drop trigger if exists trigger_log_point_change on public.puntos_encuentro;
+create trigger trigger_log_point_change
+  after update on public.puntos_encuentro
+  for each row execute procedure public.log_point_change();
 
--- Función para cambiar estado de un punto específico
-CREATE OR REPLACE FUNCTION cambiar_estado_punto_encuentro(punto_id UUID, nuevo_estado BOOLEAN)
-RETURNS VOID AS $$
-BEGIN
-    UPDATE puntos_encuentro
-    SET ocupado = nuevo_estado
-    WHERE id = punto_id;
+-- ---------------------------------------------------------------------------
+-- 3. RPCs atómicos de operación
+-- ---------------------------------------------------------------------------
 
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Punto de encuentro no encontrado con ID: %', punto_id;
-    END IF;
+create or replace function public.cambiar_nivel_alerta(nuevo_nivel text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  volcan_id_var uuid;
+  parametros_id_var uuid;
+  anterior public.alertas_volcan;
+  descripcion_var text;
+  sismos_var integer;
+  temperatura_var text;
+  so2_var text;
+  deformacion_var text;
+begin
+  if not public.is_operator() then
+    raise exception 'operator_role_required' using errcode = '42501';
+  end if;
+  if nuevo_nivel not in ('verde', 'amarillo', 'naranja', 'rojo') then
+    raise exception 'invalid_alert_level' using errcode = '22023';
+  end if;
 
-    RAISE NOTICE 'Punto % actualizado a estado ocupado: %', punto_id, nuevo_estado;
-END;
-$$ LANGUAGE plpgsql;
+  -- El estado vigente se actualiza en sitio; el trigger conserva el historial
+  -- operativo en logs_sistema sin hacer crecer alertas/parametros sin límite.
+  select * into anterior
+  from public.alertas_volcan
+  order by ultima_actualizacion desc
+  limit 1
+  for update;
+  select id into volcan_id_var from public.informacion_volcan where activo = true order by nombre limit 1;
 
--- Función para obtener estado de todos los puntos
-CREATE OR REPLACE FUNCTION obtener_estado_puntos()
-RETURNS TABLE(
-    id UUID,
-    nombre VARCHAR(255),
-    capacidad INTEGER,
-    ocupado BOOLEAN,
-    estado_texto VARCHAR(20)
-) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT
-        pe.id,
-        pe.nombre,
-        pe.capacidad,
-        pe.ocupado,
-        CASE
-            WHEN pe.ocupado THEN 'LLENO'
-            ELSE 'DISPONIBLE'
-        END as estado_texto
-    FROM puntos_encuentro pe
-    ORDER BY pe.nombre;
-END;
-$$ LANGUAGE plpgsql;
+  case nuevo_nivel
+    when 'verde' then
+      sismos_var := 12; temperatura_var := '650 °C'; so2_var := '400 ton/día'; deformacion_var := '0,8 cm/mes';
+      descripcion_var := 'Actividad volcánica habitual. Monitoreo rutinario activo.';
+    when 'amarillo' then
+      sismos_var := 45; temperatura_var := '850 °C'; so2_var := '1.200 ton/día'; deformacion_var := '2,3 cm/mes';
+      descripcion_var := 'Actividad volcánica inestable. Monitoreo reforzado activo.';
+    when 'naranja' then
+      sismos_var := 84; temperatura_var := '1.050 °C'; so2_var := '2.400 ton/día'; deformacion_var := '4,8 cm/mes';
+      descripcion_var := 'Variación significativa. Sigue instrucciones oficiales y prepara una posible evacuación.';
+    when 'rojo' then
+      sismos_var := 140; temperatura_var := '1.250 °C'; so2_var := '4.800 ton/día'; deformacion_var := '7,5 cm/mes';
+      descripcion_var := 'Erupción mayor inminente o en curso. Sigue las instrucciones oficiales de evacuación.';
+  end case;
 
--- Función para marcar todos los puntos como disponibles (reset)
-CREATE OR REPLACE FUNCTION resetear_puntos_encuentro()
-RETURNS VOID AS $$
-DECLARE
-    puntos_actualizados INTEGER;
-BEGIN
-    UPDATE puntos_encuentro SET ocupado = FALSE;
-    GET DIAGNOSTICS puntos_actualizados = ROW_COUNT;
+  if anterior.id is null then
+    insert into public.parametros_volcan (sismos_24h, temperatura_crater, emision_so2, deformacion, fuente, es_simulacion)
+    values (sismos_var, temperatura_var, so2_var, deformacion_var, 'Simulación de operador Vulcania', true)
+    returning id into parametros_id_var;
 
-    RAISE NOTICE 'Se resetearon % puntos de encuentro a estado disponible', puntos_actualizados;
-END;
-$$ LANGUAGE plpgsql;
+    insert into public.alertas_volcan (nivel_alerta, descripcion, fuente, referencia, es_simulacion, parametros_id, volcan_id)
+    values (nuevo_nivel, descripcion_var, 'Simulación de operador Vulcania', 'OPERADOR-SIM', true, parametros_id_var, volcan_id_var);
+  else
+    parametros_id_var := anterior.parametros_id;
+    if parametros_id_var is null then
+      insert into public.parametros_volcan (sismos_24h, temperatura_crater, emision_so2, deformacion, fuente, es_simulacion)
+      values (sismos_var, temperatura_var, so2_var, deformacion_var, 'Simulación de operador Vulcania', true)
+      returning id into parametros_id_var;
+    else
+      update public.parametros_volcan
+      set sismos_24h = sismos_var,
+          temperatura_crater = temperatura_var,
+          emision_so2 = so2_var,
+          deformacion = deformacion_var,
+          fuente = 'Simulación de operador Vulcania',
+          es_simulacion = true,
+          fecha_actualizacion = now()
+      where id = parametros_id_var;
+    end if;
 
--- Función para log de cambios en puntos de encuentro
-CREATE OR REPLACE FUNCTION log_cambio_estado_punto()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Solo hacer log si el estado de ocupado cambió
-    IF OLD.ocupado IS DISTINCT FROM NEW.ocupado THEN
-        INSERT INTO logs_sistema (
-            tabla,
-            accion,
-            registro_id,
-            datos_anteriores,
-            datos_nuevos,
-            fecha_cambio
-        ) VALUES (
-            'puntos_encuentro',
-            'UPDATE',
-            NEW.id::TEXT,
-            jsonb_build_object('ocupado', OLD.ocupado),
-            jsonb_build_object('ocupado', NEW.ocupado),
-            NOW()
-        );
-    END IF;
+    update public.alertas_volcan
+    set nivel_alerta = nuevo_nivel,
+        descripcion = descripcion_var,
+        fuente = 'Simulación de operador Vulcania',
+        referencia = 'OPERADOR-SIM',
+        es_simulacion = true,
+        ultima_actualizacion = now(),
+        parametros_id = parametros_id_var,
+        volcan_id = volcan_id_var
+    where id = anterior.id;
+  end if;
 
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+  return jsonb_build_object(
+    'nivel_alerta', nuevo_nivel,
+    'anterior', case when anterior.id is null then null else anterior.nivel_alerta end,
+    'parametros_id', parametros_id_var
+  );
+end;
+$$;
 
--- =====================================
--- 4. CREATE TRIGGERS
--- =====================================
+create or replace function public.cambiar_estado_punto_encuentro(punto_id uuid, nuevo_estado boolean)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_operator() then
+    raise exception 'operator_role_required' using errcode = '42501';
+  end if;
+  update public.puntos_encuentro set ocupado = nuevo_estado where id = punto_id;
+  if not found then raise exception 'meeting_point_not_found'; end if;
+end;
+$$;
 
--- Trigger para log de cambios en puntos de encuentro
-DROP TRIGGER IF EXISTS trigger_log_cambio_estado_punto ON puntos_encuentro;
-CREATE TRIGGER trigger_log_cambio_estado_punto
-    AFTER UPDATE ON puntos_encuentro
-    FOR EACH ROW
-    EXECUTE FUNCTION log_cambio_estado_punto();
+create or replace function public.resetear_puntos_encuentro()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_operator() then
+    raise exception 'operator_role_required' using errcode = '42501';
+  end if;
+  update public.puntos_encuentro set ocupado = false where ocupado = true;
+end;
+$$;
 
--- =====================================
--- 5. ENABLE ROW LEVEL SECURITY
--- =====================================
+-- ---------------------------------------------------------------------------
+-- 4. RLS y permisos
+-- ---------------------------------------------------------------------------
 
--- Habilitar RLS en puntos_encuentro
-ALTER TABLE puntos_encuentro ENABLE ROW LEVEL SECURITY;
+alter table public.usuarios enable row level security;
+alter table public.informacion_volcan enable row level security;
+alter table public.parametros_volcan enable row level security;
+alter table public.configuraciones_nivel enable row level security;
+alter table public.alertas_volcan enable row level security;
+alter table public.recomendaciones_nivel enable row level security;
+alter table public.zonas_exclusion enable row level security;
+alter table public.acciones_requeridas enable row level security;
+alter table public.puntos_encuentro enable row level security;
+alter table public.avisos_comunidad enable row level security;
+alter table public.mensajes_chat enable row level security;
+alter table public.logs_sistema enable row level security;
 
--- Crear políticas de seguridad
-DROP POLICY IF EXISTS "Allow read access to puntos_encuentro" ON puntos_encuentro;
-CREATE POLICY "Allow read access to puntos_encuentro"
-ON puntos_encuentro FOR SELECT
-USING (true);
+do $$
+declare
+  table_name text;
+begin
+  foreach table_name in array array[
+    'usuarios', 'informacion_volcan', 'parametros_volcan', 'configuraciones_nivel',
+    'alertas_volcan', 'recomendaciones_nivel', 'zonas_exclusion', 'acciones_requeridas',
+    'puntos_encuentro', 'avisos_comunidad', 'mensajes_chat', 'logs_sistema'
+  ] loop
+    execute format('drop policy if exists "legacy_open_access" on public.%I', table_name);
+  end loop;
+end;
+$$;
 
-DROP POLICY IF EXISTS "Allow admin updates on puntos_encuentro" ON puntos_encuentro;
-CREATE POLICY "Allow admin updates on puntos_encuentro"
-ON puntos_encuentro FOR UPDATE
-USING (true);
+drop policy if exists usuarios_select on public.usuarios;
+create policy usuarios_select on public.usuarios for select to authenticated
+  using (id = auth.uid() or public.is_operator());
 
--- =====================================
--- 6. INSERT INITIAL DATA
--- =====================================
+drop policy if exists official_read on public.informacion_volcan;
+create policy official_read on public.informacion_volcan for select to anon, authenticated using (activo = true);
+drop policy if exists official_read on public.parametros_volcan;
+create policy official_read on public.parametros_volcan for select to anon, authenticated using (true);
+drop policy if exists official_read on public.configuraciones_nivel;
+create policy official_read on public.configuraciones_nivel for select to anon, authenticated using (true);
+drop policy if exists official_read on public.alertas_volcan;
+create policy official_read on public.alertas_volcan for select to anon, authenticated using (true);
+drop policy if exists official_read on public.recomendaciones_nivel;
+create policy official_read on public.recomendaciones_nivel for select to anon, authenticated using (true);
+drop policy if exists official_read on public.zonas_exclusion;
+create policy official_read on public.zonas_exclusion for select to anon, authenticated using (true);
+drop policy if exists official_read on public.acciones_requeridas;
+create policy official_read on public.acciones_requeridas for select to anon, authenticated using (true);
+drop policy if exists points_read on public.puntos_encuentro;
+create policy points_read on public.puntos_encuentro for select to anon, authenticated using (true);
 
--- Insertar información del volcán
-INSERT INTO informacion_volcan (nombre, codigo, altura_msnm, latitud, longitud, descripcion) VALUES
-('Villarrica', 'VIL', 2847, -39.4167, -71.9333, 'Volcán activo ubicado en la Región de la Araucanía, Chile');
+drop policy if exists community_read on public.avisos_comunidad;
+create policy community_read on public.avisos_comunidad for select to authenticated using (estado = 'activo');
+drop policy if exists community_insert on public.avisos_comunidad;
+create policy community_insert on public.avisos_comunidad for insert to authenticated
+  with check (usuario_id = auth.uid());
+drop policy if exists community_update_own on public.avisos_comunidad;
+create policy community_update_own on public.avisos_comunidad for update to authenticated
+  using (usuario_id = auth.uid() or public.is_operator())
+  with check (usuario_id = auth.uid() or public.is_operator());
 
--- Insertar configuraciones de niveles de alerta
-INSERT INTO configuraciones_nivel (nivel, color, text_color, bg_gradient, icon_name, label, descripcion_corta, urgencia, pulse_color) VALUES
-('verde', 'bg-green-600', 'text-white', 'from-green-900/30 to-green-900/10', 'Shield', 'NORMAL', 'Actividad volcánica normal', 'baja', 'shadow-green-500/50'),
-('amarillo', 'bg-yellow-600', 'text-white', 'from-yellow-900/30 to-yellow-900/10', 'Activity', 'PRECAUCIÓN', 'Actividad volcánica elevada', 'media', 'shadow-yellow-500/50'),
-('naranja', 'bg-orange-600', 'text-white', 'from-orange-900/30 to-orange-900/10', 'TrendingUp', 'ALERTA', 'Actividad volcánica alta', 'alta', 'shadow-orange-500/70'),
-('rojo', 'bg-red-600', 'text-white', 'from-red-900/30 to-red-900/10', 'AlertTriangle', 'EMERGENCIA', 'Erupción inminente o en curso', 'crítica', 'shadow-red-500/80');
+drop policy if exists chat_read on public.mensajes_chat;
+create policy chat_read on public.mensajes_chat for select to authenticated
+  using (emisor_id = auth.uid() or receptor_id = auth.uid());
+drop policy if exists chat_insert on public.mensajes_chat;
+create policy chat_insert on public.mensajes_chat for insert to authenticated
+  with check (emisor_id = auth.uid() and receptor_id <> auth.uid());
+drop policy if exists chat_mark_read on public.mensajes_chat;
+create policy chat_mark_read on public.mensajes_chat for update to authenticated
+  using (receptor_id = auth.uid())
+  with check (receptor_id = auth.uid());
 
--- Insertar parámetros actuales del volcán (NIVEL CRÍTICO PARA PRUEBAS)
-INSERT INTO parametros_volcan (sismos_24h, temperatura_crater, emision_so2, deformacion) VALUES
-(285, '1,400°C', '8,500 ton/día', '15.2 cm/mes');
+drop policy if exists logs_operator_read on public.logs_sistema;
+create policy logs_operator_read on public.logs_sistema for select to authenticated
+  using (public.is_operator());
 
--- Insertar alerta actual del volcán (NIVEL CRÍTICO PARA PRUEBAS)
-INSERT INTO alertas_volcan (nivel_alerta, descripcion, parametros_id, volcan_id) VALUES
-('rojo', 'EMERGENCIA VOLCÁNICA - Erupción inminente. ERUPCIÓN INMINENTE O EN CURSO. Evacuación inmediata obligatoria. Actividad sísmica extrema y emisiones masivas de gases.',
-(SELECT id FROM parametros_volcan LIMIT 1),
-(SELECT id FROM informacion_volcan LIMIT 1));
+-- Las mutaciones sensibles pasan solo por las funciones anteriores.
+revoke all on public.usuarios from anon, authenticated;
+grant select (id, nombre, rol, fecha_creacion) on public.usuarios to authenticated;
+grant select (telefono) on public.usuarios to authenticated;
+grant select on public.perfiles_publicos to authenticated;
+grant select on public.informacion_volcan, public.parametros_volcan, public.configuraciones_nivel,
+  public.alertas_volcan, public.recomendaciones_nivel, public.zonas_exclusion,
+  public.acciones_requeridas, public.puntos_encuentro to anon, authenticated;
+revoke all on public.avisos_comunidad from authenticated;
+grant select on public.avisos_comunidad to authenticated;
+grant insert (usuario_id, mensaje) on public.avisos_comunidad to authenticated;
+grant update (mensaje, estado) on public.avisos_comunidad to authenticated;
+revoke all on public.mensajes_chat from authenticated;
+grant select on public.mensajes_chat to authenticated;
+grant insert (emisor_id, receptor_id, mensaje) on public.mensajes_chat to authenticated;
+grant update (leido, fecha_lectura) on public.mensajes_chat to authenticated;
+grant execute on function public.cambiar_nivel_alerta(text), public.cambiar_estado_punto_encuentro(uuid, boolean),
+  public.resetear_puntos_encuentro() to authenticated;
+revoke execute on function public.cambiar_nivel_alerta(text), public.cambiar_estado_punto_encuentro(uuid, boolean),
+  public.resetear_puntos_encuentro() from public, anon;
+grant execute on function public.is_operator() to authenticated;
+revoke execute on function public.is_operator() from public, anon;
 
--- Insertar recomendaciones por nivel
-INSERT INTO recomendaciones_nivel (nivel, recomendacion, orden) VALUES
--- Verde
-('verde', 'Mantenerse informado sobre la actividad volcánica', 1),
-('verde', 'Revisar planes de emergencia familiares', 2),
-('verde', 'Conocer las rutas de evacuación', 3),
--- Amarillo
-('amarillo', 'Mantenerse informado sobre la evolución de la actividad volcánica', 1),
-('amarillo', 'Revisar y actualizar planes de evacuación familiares', 2),
-('amarillo', 'Tener preparado kit de emergencia', 3),
-('amarillo', 'No acercarse al cráter del volcán', 4),
--- Naranja
-('naranja', 'EVACUAR INMEDIATAMENTE si se encuentra en zona de riesgo', 1),
-('naranja', 'Dirigirse al punto de encuentro más cercano', 2),
-('naranja', 'Mantener comunicación con familiares y vecinos', 3),
-('naranja', 'Seguir las instrucciones de las autoridades', 4),
-('naranja', 'Tener preparado kit de emergencia y documentos importantes', 5),
--- Rojo
-('rojo', 'EVACUACIÓN INMEDIATA Y OBLIGATORIA', 1),
-('rojo', 'Alejarse inmediatamente de la zona de peligro', 2),
-('rojo', 'Seguir estrictamente las instrucciones de emergencia', 3),
-('rojo', 'Mantener comunicación con autoridades', 4),
-('rojo', 'No regresar hasta que las autoridades lo autoricen', 5);
+-- Health check read-only para que `pnpm doctor` pueda detectar instalaciones
+-- existentes donde la publicación Realtime todavía no se aplicó.
+create or replace function public.verificar_publicaciones_realtime()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select jsonb_build_object(
+    'alertas_volcan', exists (
+      select 1 from pg_catalog.pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'alertas_volcan'
+    ),
+    'puntos_encuentro', exists (
+      select 1 from pg_catalog.pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'puntos_encuentro'
+    ),
+    'avisos_comunidad', exists (
+      select 1 from pg_catalog.pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'avisos_comunidad'
+    ),
+    'mensajes_chat', exists (
+      select 1 from pg_catalog.pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'mensajes_chat'
+    )
+  );
+$$;
 
--- Insertar zonas de exclusión por nivel
-INSERT INTO zonas_exclusion (nivel_alerta, radio_km, descripcion) VALUES
-('verde', 3, 'Zona de exclusión de 3 km alrededor del cráter'),
-('amarillo', 3, 'Zona de exclusión de 3 km alrededor del cráter'),
-('naranja', 8, 'Zona de exclusión ampliada a 8 km alrededor del cráter'),
-('rojo', 15, 'Zona de exclusión crítica de 15 km alrededor del cráter');
+revoke all on function public.verificar_publicaciones_realtime() from public;
+grant execute on function public.verificar_publicaciones_realtime() to anon, authenticated, service_role;
+revoke execute on function public.verificar_publicaciones_realtime() from public;
 
--- Insertar acciones requeridas por nivel
-INSERT INTO acciones_requeridas (nivel_alerta, evacuar_zona_riesgo, activar_red_comunitaria, revisar_rutas_evacuacion, preparar_kit_emergencia) VALUES
-('verde', FALSE, FALSE, FALSE, FALSE),
-('amarillo', FALSE, FALSE, TRUE, TRUE),
-('naranja', TRUE, TRUE, TRUE, TRUE),
-('rojo', TRUE, TRUE, TRUE, TRUE);
+-- ---------------------------------------------------------------------------
+-- 5. Seed inicial seguro e idempotente
+-- ---------------------------------------------------------------------------
 
--- Insertar datos de ejemplo para usuarios
-INSERT INTO usuarios (nombre, telefono) VALUES
-('Demo', '+56900000000'),
-('María González', '+56912345678'),
-('Carlos Muñoz', '+56987654321'),
-('Ana Pérez', '+56911111111'),
-('Juan Martínez', '+56922222222'),
-('Claudia Soto', '+56933333333');
+insert into public.informacion_volcan (nombre, codigo, altura_msnm, latitud, longitud, descripcion)
+values ('Villarrica', 'VIL', 2847, -39.41670000, -71.93330000,
+  'Volcán activo de la Región de La Araucanía, Chile.')
+on conflict (codigo) do update set nombre = excluded.nombre, altura_msnm = excluded.altura_msnm,
+  latitud = excluded.latitud, longitud = excluded.longitud, descripcion = excluded.descripcion;
 
--- Insertar puntos de encuentro
-INSERT INTO puntos_encuentro
-(nombre, direccion, latitud, longitud, capacidad, seguridad_nivel, tiempo_aprox_pie, ocupado) VALUES
--- Sector Coñaripe / Pucura – informe 2021-01
-('Mirador Puente Pellaifa',                   'Puente Pellaifa, camino a Coñaripe',      -39.588915, -72.019553, 150, 4, 30, FALSE),
-('Agrupación Mujeres Huincul Zomo "Mili-Mili"','Sector Milimili, Pucón',                  -39.512830, -72.031753, 120, 3, 45, FALSE),
-('Familia Cheuquepán Palo Blanco',            'Sector Cheuquepán–Palo Blanco, Pucón',    -39.527723, -72.052743,  80, 3, 40, FALSE),
-('Cementerio Pucura',                         'Sector Pucura, Pucón',                    -39.515153, -72.062183, 200, 4, 35, FALSE),
-('Familia Lefinao',                            'Félix Lefinao, Pucón',                    -39.513860, -72.076636,  75, 3, 50, FALSE),
-('Poly Pinilla Challupén Bajo',               'Challupén Bajo, Pucón',                   -39.492506, -72.063614,  80, 3, 55, FALSE),
+insert into public.configuraciones_nivel (nivel, color, text_color, bg_gradient, icon_name, label, descripcion_corta, urgencia, pulse_color)
+values
+  ('verde', 'emerald', 'dark', 'emerald', 'ShieldCheck', 'Alerta Verde', 'Actividad habitual', 'baja', 'none'),
+  ('amarillo', 'yellow', 'dark', 'yellow', 'AlertTriangle', 'Alerta Amarilla', 'Actividad inestable', 'media', 'none'),
+  ('naranja', 'orange', 'dark', 'orange', 'Flame', 'Alerta Naranja', 'Variación significativa', 'alta', 'one-shot'),
+  ('rojo', 'red', 'light', 'red', 'Siren', 'Alerta Roja', 'Erupción mayor inminente o en curso', 'crítica', 'one-shot')
+on conflict (nivel) do update set label = excluded.label, descripcion_corta = excluded.descripcion_corta,
+  icon_name = excluded.icon_name, urgencia = excluded.urgencia;
 
--- Sector Chaillupén / Voipir / Lican Ray – informe 2021-04
-('Sede Ambrosio',                             'Sector Ambrosio, Pucón',                  -39.492356, -72.103197, 100, 3, 60, FALSE),
-('Punulef',                                   'Sector Punulef, Coñaripe/Pucón',          -39.483065, -72.137238,  70, 2, 65, FALSE),
-('Escuela Alihuén',                           'Challupén, comuna Villarrica',            -39.485917, -72.092118,  60, 3, 70, FALSE),
-('Ensenada Cabañas Norma Punulef',            'Ensenada, Lican Ray',                     -39.483065, -72.137238, 120, 4, 75, FALSE),
-('Cementerio Putabla Predio Renato Vallejos', 'Sector Putabla, Pucón',                   -39.481564, -72.163816, 100, 3, 80, FALSE),
-('Voipir Seco Predio Hugo Vera',              'Voipir Seco Alto, Pucón',                 -39.415442, -72.059815,  70, 2, 85, FALSE),
-('Voipir Seco Predio Kolping',                'Voipir Seco Alto, Pucón',                 -39.395078, -72.094364,  70, 2, 90, FALSE),
-('Huincacara Sur Predio Juana Montecinos',    'Huincacara Sur, Villarrica',              -39.367774, -72.155232,  80, 3, 95, FALSE),
-('Huincacara Norte Cerro El Pirao',           'Cerro El Pirao, Huincacara Norte',        -39.369918, -72.078219,  60, 3,100, FALSE),
-('Loncotraro – Helipuerto Hotel Park Lake',   'Hotel Park Lake, Loncotraro, Pucón',      -39.301784, -72.088523, 120, 4,105, FALSE),
-('Los Riscos',                                'Sector Los Riscos, Pucón',                -39.317321, -72.033522, 100, 3,110, FALSE),
-('Candelaria',                                'Camino Villarrica-Pucón, Candelaria',     -39.321525, -72.009452,  80, 3,115, FALSE),
-('Los Calabozos',                             'Sector Los Calabozos, Pucón',             -39.303147, -71.936115,  90, 3,120, FALSE),
-('Península',                                 'Península Pucón (entre río y lago)',      -39.270851, -71.992331, 150, 4,125, FALSE),
-('Escuela Quelhue Quelhue Alto',              'Escuela Quelhue Alto, Pucón',             -39.257567, -71.917710,  80, 3,130, FALSE),
-('Mirador Camino al Volcán',                  'Camino Pucón–Caburgua, km c/ vista',      -39.352156, -71.977432, 100, 4,135, FALSE),
-('Familia Ñanculipe',                         'Sector Ñanculipe, Pucón',                 -39.569021, -71.980258,  60, 2,140, FALSE),
-('Pino Huacho Predio Pedro Vásquez',          'Sector Pino Huacho, Pucón',               -39.444890, -72.047701,  70, 3,145, FALSE),
-('Escuela Estadio Cudico',                    'Sector Cudico, Pucón',                    -39.438448, -72.119073,  90, 3,150, FALSE),
-('Hincacara Sur Iglesia Pentecostal Calfutúe','Iglesia Pentecostal Calfutúe, Huincacara', -39.362367, -72.203810,  80, 3,155, FALSE),
-('Conquil Predio Julio Bustos',               'Sector Conquil, predio Julio Bustos',     -39.343760, -72.152018,  70, 3,160, FALSE),
-('Estrella Blanca Predio Carmen San Martín',  'Sector Estrella Blanca, Loncotraro Alto', -39.354081, -72.042908,  90, 4,165, FALSE),
-('Loncotraro Alto Country Pucón',             'Entrada Country Pucón, Loncotraro Alto',  -39.341939, -72.048641, 100, 4,170, FALSE),
-('Piedra Amarilla Club de Huasos',            'Sector Piedra Amarilla, Club de Huasos',  -39.354081, -72.042908, 110, 4,175, FALSE),
-('Cerdúo 1',                                  'Sector Cerdúo, Pucón',                    -39.296860, -71.872014,  60, 2,180, FALSE),
-('Cerdúo 2',                                  'Sector Cerdúo, Pucón',                    -39.302780, -71.897940,  60, 2,185, FALSE),
-('Palguín',                                   'Sector Palguín, Pucón',                   -39.398066, -71.783160,  80, 3,190, FALSE);
+insert into public.parametros_volcan (sismos_24h, temperatura_crater, emision_so2, deformacion, fuente, es_simulacion)
+select 12, '650 °C', '400 ton/día', '0,8 cm/mes', 'Seed de instalación Vulcania', true
+where not exists (select 1 from public.parametros_volcan);
 
--- Insertar avisos de la comunidad
-INSERT INTO avisos_comunidad (usuario_id, mensaje) VALUES
-((SELECT id FROM usuarios WHERE nombre = 'Demo'), 'Sistema inicializado correctamente. ¡Bienvenido a Vulcania!'),
-((SELECT id FROM usuarios WHERE nombre = 'María González'), 'Todo tranquilo por sector centro de Pucón'),
-((SELECT id FROM usuarios WHERE nombre = 'Carlos Muñoz'), 'Veo mucha actividad en el volcán desde mi casa'),
-((SELECT id FROM usuarios WHERE nombre = 'Ana Pérez'), 'Familia segura, nos dirigimos al punto de encuentro'),
-((SELECT id FROM usuarios WHERE nombre = 'Juan Martínez'), 'Ruta hacia Temuco despejada, sin problemas de tráfico'),
-((SELECT id FROM usuarios WHERE nombre = 'Claudia Soto'), 'Punto de encuentro Estadio Municipal con espacio disponible');
+insert into public.alertas_volcan (nivel_alerta, descripcion, fuente, referencia, es_simulacion, parametros_id, volcan_id)
+select 'verde', 'Actividad volcánica habitual. Monitoreo rutinario activo.', 'Seed de instalación Vulcania', 'SEED', true,
+  (select id from public.parametros_volcan order by fecha_actualizacion limit 1),
+  (select id from public.informacion_volcan where codigo = 'VIL')
+where not exists (select 1 from public.alertas_volcan);
 
--- Insertar algunos mensajes de chat de ejemplo
-INSERT INTO mensajes_chat (emisor_id, receptor_id, mensaje) VALUES
-((SELECT id FROM usuarios WHERE nombre = 'María González'), (SELECT id FROM usuarios WHERE nombre = 'Demo'), 'Hola Demo, ¿cómo funciona el sistema de chat?'),
-((SELECT id FROM usuarios WHERE nombre = 'Demo'), (SELECT id FROM usuarios WHERE nombre = 'María González'), 'Hola María, funciona perfecto. Puedes enviar mensajes a cualquier usuario registrado.'),
-((SELECT id FROM usuarios WHERE nombre = 'Carlos Muñoz'), (SELECT id FROM usuarios WHERE nombre = 'Demo'), 'Demo, ¿el sistema muestra notificaciones en tiempo real?'),
-((SELECT id FROM usuarios WHERE nombre = 'Demo'), (SELECT id FROM usuarios WHERE nombre = 'Carlos Muñoz'), 'Sí Carlos, las notificaciones aparecen inmediatamente cuando recibes un mensaje.'),
-((SELECT id FROM usuarios WHERE nombre = 'María González'), (SELECT id FROM usuarios WHERE nombre = 'Carlos Muñoz'), 'Hola Carlos, ¿cómo está la situación por tu sector?'),
-((SELECT id FROM usuarios WHERE nombre = 'Carlos Muñoz'), (SELECT id FROM usuarios WHERE nombre = 'María González'), 'Hola María, todo tranquilo por acá. ¿Y por el centro?'),
-((SELECT id FROM usuarios WHERE nombre = 'Ana Pérez'), (SELECT id FROM usuarios WHERE nombre = 'Juan Martínez'), 'Juan, ¿sabes si el punto de encuentro del estadio está operativo?'),
-((SELECT id FROM usuarios WHERE nombre = 'Juan Martínez'), (SELECT id FROM usuarios WHERE nombre = 'Ana Pérez'), 'Sí Ana, acabo de pasar y está funcionando normalmente');
+insert into public.recomendaciones_nivel (nivel, recomendacion, orden)
+values
+  ('verde', 'Mantente informado por canales oficiales.', 1),
+  ('verde', 'Revisa tu plan familiar y rutas de evacuación.', 2),
+  ('amarillo', 'Mantente alejado del volcán y sigue a las autoridades.', 1),
+  ('amarillo', 'Prepara tu kit y revisa las rutas de evacuación.', 2),
+  ('naranja', 'Prepara una posible evacuación y sigue instrucciones oficiales.', 1),
+  ('naranja', 'Dirígete al punto de encuentro indicado si se ordena evacuar.', 2),
+  ('rojo', 'Sigue las instrucciones oficiales de evacuación.', 1),
+  ('rojo', 'No regreses hasta que las autoridades lo autoricen.', 2)
+on conflict (nivel, orden) do update set recomendacion = excluded.recomendacion;
 
--- =====================================
--- 7. VERIFICATION
--- =====================================
+insert into public.zonas_exclusion (nivel_alerta, radio_km, descripcion)
+values ('verde', 3, 'Zona de exclusión técnica de 3 km'), ('amarillo', 3, 'Zona de exclusión técnica de 3 km'),
+  ('naranja', 8, 'Zona de exclusión ampliada de 8 km'), ('rojo', 15, 'Zona de exclusión crítica de 15 km')
+on conflict (nivel_alerta) do update set radio_km = excluded.radio_km, descripcion = excluded.descripcion;
 
-DO $$
-DECLARE
-    total_puntos INTEGER;
-    puntos_disponibles INTEGER;
-    puntos_ocupados INTEGER;
-    total_usuarios INTEGER;
-    usuario_demo TEXT;
-BEGIN
-    SELECT COUNT(*) INTO total_puntos FROM puntos_encuentro;
-    SELECT COUNT(*) INTO puntos_disponibles FROM puntos_encuentro WHERE ocupado = FALSE;
-    SELECT COUNT(*) INTO puntos_ocupados FROM puntos_encuentro WHERE ocupado = TRUE;
-    SELECT COUNT(*) INTO total_usuarios FROM usuarios;
-    SELECT nombre INTO usuario_demo FROM usuarios WHERE nombre = 'Demo';
+insert into public.acciones_requeridas (nivel_alerta, evacuar_zona_riesgo, activar_red_comunitaria, revisar_rutas_evacuacion, preparar_kit_emergencia)
+values ('verde', false, false, true, false), ('amarillo', false, false, true, true),
+  ('naranja', true, true, true, true), ('rojo', true, true, true, true)
+on conflict (nivel_alerta) do update set evacuar_zona_riesgo = excluded.evacuar_zona_riesgo,
+  activar_red_comunitaria = excluded.activar_red_comunitaria, revisar_rutas_evacuacion = excluded.revisar_rutas_evacuacion,
+  preparar_kit_emergencia = excluded.preparar_kit_emergencia;
 
-    RAISE NOTICE '=== BASE DE DATOS INICIALIZADA EXITOSAMENTE ===';
-    RAISE NOTICE 'Total de usuarios: % (incluyendo usuario Demo: %)', total_usuarios, usuario_demo;
-    RAISE NOTICE 'Total de puntos de encuentro: %', total_puntos;
-    RAISE NOTICE 'Puntos disponibles: %', puntos_disponibles;
-    RAISE NOTICE 'Puntos ocupados: %', puntos_ocupados;
-    RAISE NOTICE 'Columnas de mensajes leídos: CONFIGURADAS';
-    RAISE NOTICE '=============================================';
-END $$;
+insert into public.puntos_encuentro (nombre, direccion, latitud, longitud, capacidad, seguridad_nivel, tiempo_aprox_pie, ocupado)
+values
+  ('Estadio Pucón', 'Centro de Pucón', -39.27960000, -71.97250000, 500, 4, 20, false),
+  ('Escuela Quelhue', 'Sector Quelhue', -39.25750000, -71.91770000, 250, 3, 35, false),
+  ('Club de Huasos', 'Piedra Amarilla', -39.35410000, -72.04290000, 300, 4, 45, false),
+  ('Mirador Puente Pellaifa', 'Camino a Coñaripe', -39.58891500, -72.01955300, 150, 4, 30, false)
+on conflict (nombre) do update set direccion = excluded.direccion, latitud = excluded.latitud,
+  longitud = excluded.longitud, capacidad = excluded.capacidad, seguridad_nivel = excluded.seguridad_nivel,
+  tiempo_aprox_pie = excluded.tiempo_aprox_pie;
+
+-- ---------------------------------------------------------------------------
+-- 6. Realtime: se agrega solo si todavía no está publicada
+-- ---------------------------------------------------------------------------
+
+do $$
+begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'alertas_volcan') then
+    alter publication supabase_realtime add table public.alertas_volcan;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'puntos_encuentro') then
+    alter publication supabase_realtime add table public.puntos_encuentro;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'avisos_comunidad') then
+    alter publication supabase_realtime add table public.avisos_comunidad;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'mensajes_chat') then
+    alter publication supabase_realtime add table public.mensajes_chat;
+  end if;
+end;
+$$;
+
+-- Verificación rápida (visible en SQL Editor): 12 tablas con RLS, alerta verde
+-- inicial y cuatro tablas publicadas para Realtime.

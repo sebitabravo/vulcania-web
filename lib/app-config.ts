@@ -1,26 +1,44 @@
-const toBoolean = (value: string | undefined, fallback = false): boolean => {
+export const toBoolean = (value: string | undefined, fallback = false): boolean => {
   if (typeof value === "undefined") return fallback;
   return value.toLowerCase() === "true";
 };
 
-const hasSupabaseEnv = Boolean(
-  process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+export type RuntimeEnv = Record<string, string | undefined>;
+
+// Mantener estos accesos directos permite que Next.js inlinee las variables
+// NEXT_PUBLIC_* también en los bundles del cliente.
+const runtimeEnv: RuntimeEnv = {
+  NEXT_PUBLIC_DEMO_MODE: process.env.NEXT_PUBLIC_DEMO_MODE,
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  NEXT_PUBLIC_DEMO_READONLY: process.env.NEXT_PUBLIC_DEMO_READONLY,
+};
+
+export function hasSupabaseConfig(env: RuntimeEnv = runtimeEnv): boolean {
+  return Boolean(env.NEXT_PUBLIC_SUPABASE_URL && env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+}
+
+export function resolveDemoMode(env: RuntimeEnv = runtimeEnv): boolean {
+  return toBoolean(env.NEXT_PUBLIC_DEMO_MODE, !hasSupabaseConfig(env));
+}
+
+export function resolveDemoReadOnly(env: RuntimeEnv = runtimeEnv): boolean {
+  return toBoolean(env.NEXT_PUBLIC_DEMO_READONLY, false);
+}
+
+export const isDemoMode = resolveDemoMode();
 
 // Si no hay variables de Supabase, activamos demo por defecto.
-const demoMode = toBoolean(process.env.NEXT_PUBLIC_DEMO_MODE, !hasSupabaseEnv);
-const demoReadOnly = toBoolean(
-  process.env.NEXT_PUBLIC_DEMO_READONLY,
-  false
-);
+const demoReadOnly = resolveDemoReadOnly();
 
 export const APP_CONFIG = {
-  demoMode,
+  demoMode: isDemoMode,
   demoReadOnly,
   demoPhone: process.env.NEXT_PUBLIC_DEMO_PHONE || "+56 9 8765 4321",
+  appName: "Vulcania",
+  defaultVolcanoName: "Villarrica",
   enableAdminPanel: toBoolean(
     process.env.NEXT_PUBLIC_ENABLE_ADMIN_PANEL,
-    !demoMode
+    true
   ),
 };

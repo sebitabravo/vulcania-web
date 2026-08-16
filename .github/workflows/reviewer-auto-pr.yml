@@ -3,6 +3,26 @@ name: Reviewer Auto PR
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - ".github/actionlint.yaml"
+      - ".github/workflows/**"
+      - "__tests__/**"
+      - "app/**"
+      - "components/**"
+      - "contexts/**"
+      - "hooks/**"
+      - "lib/**"
+      - "public/**"
+      - "scripts/**"
+      - ".env.example"
+      - "eslint.config.mjs"
+      - "next.config.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "postcss.config.mjs"
+      - "tailwind.config.ts"
+      - "tsconfig.json"
+      - "vitest.config.ts"
 
 permissions:
   contents: read

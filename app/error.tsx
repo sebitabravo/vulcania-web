@@ -13,22 +13,19 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     logger.error("Unhandled app error", {
-      message: error?.message,
       digest: error?.digest,
     });
   }, [error]);
 
   return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center p-6">
-      <div className="max-w-lg w-full rounded-xl border border-gray-800 bg-gray-900 p-6 space-y-4">
-        <h2 className="text-2xl font-semibold">Ocurrió un error inesperado</h2>
-        <p className="text-gray-300 text-sm">
-          Puedes reintentar ahora. Si se repite, ejecuta <code>pnpm doctor</code> para validar entorno.
+    <main className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground" role="alert">
+      <div className="w-full max-w-lg space-y-4 rounded-xl border border-border/80 bg-card p-6 shadow-xl">
+        <h2 className="font-display text-2xl font-semibold">Ocurrió un error inesperado</h2>
+        <p className="text-sm leading-6 text-muted-foreground">
+          Puedes reintentar ahora. Si se repite, ejecuta <code>pnpm run doctor</code> para validar el entorno.
         </p>
-        <Button onClick={reset} className="bg-red-600 hover:bg-red-700">
-          Reintentar
-        </Button>
+        <Button type="button" onClick={reset}>Reintentar</Button>
       </div>
-    </div>
+    </main>
   );
 }

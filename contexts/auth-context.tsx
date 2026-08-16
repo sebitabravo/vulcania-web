@@ -1,342 +1,263 @@
 "use client";
 
-import type React from "react";
-
-import { createContext, useContext, useEffect, useState } from "react";
-import { supabase, type Usuario } from "@/lib/supabase";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { APP_CONFIG } from "@/lib/app-config";
 import { DEMO_USUARIO } from "@/lib/demo-data";
+import { isValidChileanMobile, normalizePhoneSpaces } from "@/lib/phone-utils";
+import { supabase, type Usuario } from "@/lib/supabase";
 
 interface AuthContextType {
   usuario: Usuario | null;
-  login: (telefono: string) => Promise<boolean>;
-  logout: () => void;
   loading: boolean;
+  pendingPhone: string | null;
+  authError: string | null;
+  login: (telefono: string) => Promise<boolean>;
+  verifyOtp: (codigo: string) => Promise<boolean>;
+  clearPendingOtp: () => void;
+  logout: () => Promise<void>;
 }
 
-// Crear el contexto con un valor inicial definido
-const AuthContext = createContext<AuthContextType>({
-  usuario: null,
-  login: async () => false,
-  logout: () => {},
-  loading: true,
-});
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const DEMO_STORAGE_KEY = "vulcania_demo_session";
+
+function getDemoUser(telefono: string): Usuario {
+  const normalized = normalizePhoneSpaces(telefono);
+  if (normalized === normalizePhoneSpaces(APP_CONFIG.demoPhone)) {
+    return { ...DEMO_USUARIO, telefono: normalized };
+  }
+
+  return {
+    id: `demo-${normalized.replace(/\D/g, "")}`,
+    nombre: `Visitante ${normalized.slice(-4)}`,
+    telefono: normalized,
+    rol: "user",
+    fecha_creacion: new Date().toISOString(),
+  };
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isClient, setIsClient] = useState(false);
+  const [pendingPhone, setPendingPhone] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  // Asegurar que estamos en el cliente
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+  const profileFromAuthUser = useCallback(
+    async (authUser: { id: string; phone?: string; user_metadata?: Record<string, unknown> }) => {
+      if (!supabase) return null;
 
-  useEffect(() => {
-    // Verificar si hay un usuario guardado en localStorage solo después de hidratación
-    if (isClient && typeof window !== "undefined") {
-      const usuarioGuardado = localStorage.getItem("vulcania_usuario");
-      if (usuarioGuardado) {
-        try {
-          setUsuario(JSON.parse(usuarioGuardado));
-        } catch (e) {
-          console.error("Error parsing stored user:", e);
-          localStorage.removeItem("vulcania_usuario");
-        }
-      }
-      setLoading(false);
-    } else if (!isClient) {
-      // Si no estamos en el cliente, mantener loading false para SSR
-      setLoading(false);
-    }
-  }, [isClient]);
-
-  // Función para normalizar números de teléfono (remover espacios y normalizar formato)
-  const normalizarTelefono = (telefono: string): string => {
-    return telefono.replace(/\s/g, "").trim();
-  };
-
-  // Función para generar variantes de búsqueda de un número
-  const generarVariantesBusqueda = (telefono: string): string[] => {
-    const base = telefono.replace(/\s/g, "").trim();
-    const variantes = [base];
-
-    // Caso 1: Si el número es +569XXXXXXXX (con 9), generar +56XXXXXXXX (sin el primer 9)
-    if (base.match(/^\+569\d{8,9}$/)) {
-      const sinPrimerNueve = base.replace(/^\+569/, "+56");
-      variantes.push(sinPrimerNueve);
-    }
-
-    // Caso 2: Si el número es +56XXXXXXX (sin 9), generar +569XXXXXXX (con 9)
-    if (base.match(/^\+56\d{8,9}$/) && !base.startsWith("+569")) {
-      const conNueve = base.replace(/^\+56/, "+569");
-      variantes.push(conNueve);
-    }
-
-    // Caso 3: Si el número es +569XXXXXXXXX (con 9 y 9+ dígitos), puede ser +569 + 8 dígitos
-    // Esto maneja casos donde el 9 está duplicado
-    if (base.match(/^\+569\d{9,}$/)) {
-      // Extraer los primeros 8 dígitos después del 9
-      const digitosDespuesNueve = base.substring(4, 12); // +569 = 4 chars, tomar 8 dígitos
-      const formatoCorto = "+569" + digitosDespuesNueve;
-      const formatoSinNueve = "+56" + digitosDespuesNueve;
-      variantes.push(formatoCorto);
-      variantes.push(formatoSinNueve);
-    }
-
-    console.log(`🔄 Variantes para "${telefono}":`, variantes);
-    return [...new Set(variantes)]; // Remover duplicados
-  };
-
-  const login = async (telefono: string): Promise<boolean> => {
-    try {
-      console.log("🔐 Iniciando login con teléfono:", telefono);
-
-      // Verificar que supabase esté configurado
-      if (!supabase) {
-        if (APP_CONFIG.demoMode) {
-          const telefonoNormalizado = normalizarTelefono(telefono);
-          const isDemoUser =
-            telefonoNormalizado === normalizarTelefono(APP_CONFIG.demoPhone);
-
-          const usuarioDemo: Usuario = isDemoUser
-            ? DEMO_USUARIO
-            : {
-                id: `demo-${telefonoNormalizado.replace(/[^\d]/g, "")}`,
-                nombre: `Visitante ${telefonoNormalizado.slice(-4)}`,
-                telefono: telefonoNormalizado,
-                fecha_creacion: new Date().toISOString(),
-              };
-
-          setUsuario(usuarioDemo);
-          if (isClient && typeof window !== "undefined") {
-            localStorage.setItem("vulcania_usuario", JSON.stringify(usuarioDemo));
-          }
-          console.log("✅ Login demo offline exitoso");
-          return true;
-        }
-
-        console.error("❌ Supabase no está configurado");
-        return false;
-      }
-
-      // Normalizar el número para búsqueda (remover espacios)
-      const telefonoNormalizado = normalizarTelefono(telefono);
-      console.log(
-        "📱 Teléfono normalizado para búsqueda:",
-        telefonoNormalizado
-      );
-
-      // Primer intento: buscar usuario existente con el formato exacto
-      let { data, error } = await supabase
+      const { data } = await supabase
         .from("usuarios")
-        .select("*")
-        .eq("telefono", telefono)
-        .single();
+        .select("id, nombre, telefono, rol, fecha_creacion")
+        .eq("id", authUser.id)
+        .maybeSingle();
 
-      console.log("🔍 Búsqueda exacta:", {
-        telefono,
-        data,
-        error: error?.code,
-      });
+      if (data) return data as Usuario;
 
-      // Si no se encontró, buscar por número normalizado (sin espacios)
-      if (error && error.code === "PGRST116") {
-        console.log("🔍 Intentando búsqueda normalizada...");
+      // The SQL trigger normally creates this row. Keeping a read-only fallback
+      // avoids a blank shell while the trigger/schema is being deployed.
+      return {
+        id: authUser.id,
+        nombre:
+          typeof authUser.user_metadata?.name === "string"
+            ? authUser.user_metadata.name
+            : "Usuario Vulcania",
+        telefono: authUser.phone ?? "",
+        rol: "user",
+        fecha_creacion: new Date().toISOString(),
+      } satisfies Usuario;
+    },
+    []
+  );
 
-        const { data: dataNormalizada, error: errorNormalizado } =
-          await supabase
-            .from("usuarios")
-            .select("*")
-            .eq("telefono", telefonoNormalizado)
-            .single();
+  useEffect(() => {
+    let mounted = true;
 
-        console.log("🔍 Búsqueda normalizada:", {
-          telefonoNormalizado,
-          data: dataNormalizada,
-          error: errorNormalizado?.code,
-        });
-
-        if (dataNormalizada && !errorNormalizado) {
-          data = dataNormalizada;
-          error = null;
-        } else {
-          // Si tampoco se encontró, buscar todos los usuarios y comparar con variantes
-          console.log("🔍 Buscando con comparación flexible (variantes)...");
-
-          const { data: todosUsuarios, error: errorTodos } = await supabase
-            .from("usuarios")
-            .select("*");
-
-          if (todosUsuarios && !errorTodos) {
-            const variantesInput = generarVariantesBusqueda(telefono);
-            console.log(
-              "📋 Comparando variantes con usuarios existentes:",
-              todosUsuarios.map((u) => ({
-                nombre: u.nombre,
-                telefonoOriginal: u.telefono,
-                telefonoNormalizado: normalizarTelefono(u.telefono),
-              }))
-            );
-
-            const usuarioEncontrado = todosUsuarios.find((usuario) => {
-              const usuarioNormalizado = normalizarTelefono(usuario.telefono);
-              const variantesUsuario = generarVariantesBusqueda(
-                usuario.telefono
-              );
-
-              // Buscar coincidencias entre variantes del input y variantes del usuario
-              const coincide = variantesInput.some(
-                (varianteInput) =>
-                  variantesUsuario.includes(varianteInput) ||
-                  usuarioNormalizado === varianteInput
-              );
-
-              console.log(`🔍 Comparando usuario ${usuario.nombre}:`, {
-                usuarioOriginal: usuario.telefono,
-                usuarioNormalizado,
-                variantesUsuario,
-                variantesInput,
-                coincide,
-              });
-
-              return coincide;
-            });
-
-            console.log("🔍 Búsqueda flexible:", {
-              usuarioEncontrado,
-              totalUsuarios: todosUsuarios.length,
-            });
-
-            if (usuarioEncontrado) {
-              data = usuarioEncontrado;
-              error = null;
+    const hydrate = async () => {
+      if (APP_CONFIG.demoMode) {
+        let stored: string | null = null;
+        try {
+          stored = window.sessionStorage.getItem(DEMO_STORAGE_KEY);
+        } catch {
+          // Continue as a fresh local session when browser storage is blocked.
+        }
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored) as Usuario;
+            if (parsed.id && parsed.telefono) setUsuario(parsed);
+          } catch {
+            try {
+              window.sessionStorage.removeItem(DEMO_STORAGE_KEY);
+            } catch {
+              // Ignore unavailable storage; the current session remains empty.
             }
           }
         }
+        if (mounted) setLoading(false);
+        return;
       }
 
-      console.log("🔍 Resultado final de búsqueda:", {
-        data,
-        error: error
-          ? {
-              message: error.message,
-              code: error.code,
-              details: error.details,
-              hint: error.hint,
-            }
-          : null,
+      if (!supabase) {
+        if (mounted) setLoading(false);
+        return;
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.user) {
+        const profile = await profileFromAuthUser(session.user);
+        if (mounted) setUsuario(profile);
+      }
+      if (mounted) setLoading(false);
+    };
+
+    void hydrate().catch(() => {
+      if (mounted) {
+        setAuthError("No se pudo restaurar la sesión. Intenta nuevamente.");
+        setLoading(false);
+      }
+    });
+
+    if (!APP_CONFIG.demoMode && supabase) {
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((_event, session) => {
+        window.setTimeout(() => {
+          if (!mounted) return;
+          if (!session?.user) {
+            setUsuario(null);
+            setLoading(false);
+            return;
+          }
+          void profileFromAuthUser(session.user).then(setUsuario).catch(() => {
+            setAuthError("No se pudo cargar tu perfil.");
+          });
+        }, 0);
       });
 
-      // Si el error es que no se encontró el usuario (PGRST116), intentar crear uno nuevo
-      if (error && error.code === "PGRST116") {
-        if (APP_CONFIG.demoReadOnly) {
-          console.warn(
-            "Modo demo activo: no se crean usuarios automáticamente."
-          );
-          return false;
-        }
+      return () => {
+        mounted = false;
+        subscription.unsubscribe();
+      };
+    }
 
-        console.log("👤 Usuario no encontrado, creando nuevo usuario...");
+    return () => {
+      mounted = false;
+    };
+  }, [profileFromAuthUser]);
 
-        const { data: nuevoUsuario, error: errorCreacion } = await supabase
-          .from("usuarios")
-          .insert([
-            {
-              nombre: `Usuario ${telefono.slice(-4)}`,
-              telefono,
-            },
-          ])
-          .select()
-          .single();
-
-        console.log("➕ Resultado de creación de usuario:", {
-          nuevoUsuario,
-          errorCreacion: errorCreacion
-            ? {
-                message: errorCreacion.message,
-                code: errorCreacion.code,
-                details: errorCreacion.details,
-                hint: errorCreacion.hint,
-              }
-            : null,
-        });
-
-        if (errorCreacion) {
-          console.error("❌ Error al crear usuario:", errorCreacion);
-          return false;
-        }
-
-        if (!nuevoUsuario) {
-          console.error("❌ No se pudo crear el usuario (sin datos)");
-          return false;
-        }
-
-        setUsuario(nuevoUsuario);
-        if (isClient && typeof window !== "undefined") {
-          localStorage.setItem(
-            "vulcania_usuario",
-            JSON.stringify(nuevoUsuario)
-          );
-        }
-        console.log("✅ Usuario creado y guardado exitosamente");
-        return true;
-      }
-
-      // Si hay otro tipo de error, reportarlo
-      if (error) {
-        console.error("❌ Error inesperado en búsqueda de usuario:", error);
-
-        // Aún así, intentar continuar si es un error HTTP 406 pero tenemos datos
-        const errorMessage = error.message || "";
-        if (
-          data &&
-          (errorMessage.includes("406") ||
-            errorMessage.includes("Not Acceptable"))
-        ) {
-          console.log(
-            "⚠️ Error 406 (Not Acceptable) pero con datos válidos, continuando..."
-          );
-        } else {
-          return false;
-        }
-      }
-
-      // Si no hay datos y no hubo error PGRST116, algo está mal
-      if (!data) {
-        console.error(
-          "❌ No se encontraron datos y no es error de 'no encontrado'"
-        );
-        return false;
-      }
-
-      setUsuario(data);
-      if (isClient && typeof window !== "undefined") {
-        localStorage.setItem("vulcania_usuario", JSON.stringify(data));
-      }
-      console.log("✅ Login exitoso con usuario existente");
-      return true;
-    } catch (error) {
-      console.error("💥 Error crítico en login:", error);
+  const login = useCallback(async (telefono: string): Promise<boolean> => {
+    setAuthError(null);
+    const validation = isValidChileanMobile(telefono);
+    if (!validation.valid) {
+      setAuthError(validation.message ?? "Número de teléfono inválido.");
       return false;
     }
-  };
 
-  const logout = () => {
-    setUsuario(null);
-    if (isClient && typeof window !== "undefined") {
-      localStorage.removeItem("vulcania_usuario");
+    const normalized = normalizePhoneSpaces(telefono);
+    if (APP_CONFIG.demoMode) {
+      const demoUser = getDemoUser(normalized);
+      setUsuario(demoUser);
+      try {
+        window.sessionStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(demoUser));
+      } catch {
+        // Demo access remains usable for the current render without persistence.
+      }
+      return true;
     }
-  };
 
-  return (
-    <AuthContext.Provider value={{ usuario, login, logout, loading }}>
-      {children}
-    </AuthContext.Provider>
+    if (!supabase) {
+      setAuthError("El acceso completo requiere configurar Supabase.");
+      return false;
+    }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      phone: normalized,
+      options: {
+        shouldCreateUser: true,
+        data: { name: "Usuario Vulcania" },
+      },
+    });
+
+    if (error) {
+      setAuthError("No se pudo enviar el código. Revisa el número e inténtalo otra vez.");
+      return false;
+    }
+
+    setPendingPhone(normalized);
+    return true;
+  }, []);
+
+  const verifyOtp = useCallback(async (codigo: string): Promise<boolean> => {
+    setAuthError(null);
+    if (!supabase || !pendingPhone || !/^\d{6}$/.test(codigo.trim())) {
+      setAuthError("Ingresa el código de 6 dígitos recibido por SMS.");
+      return false;
+    }
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      phone: pendingPhone,
+      token: codigo.trim(),
+      type: "sms",
+    });
+
+    if (error || !data.user) {
+      setAuthError("El código no es válido o ya expiró. Solicita uno nuevo.");
+      return false;
+    }
+
+    const profile = await profileFromAuthUser(data.user);
+    setUsuario(profile);
+    setPendingPhone(null);
+    return true;
+  }, [pendingPhone, profileFromAuthUser]);
+
+  const clearPendingOtp = useCallback(() => {
+    setPendingPhone(null);
+    setAuthError(null);
+  }, []);
+
+  const logout = useCallback(async () => {
+    setUsuario(null);
+    setPendingPhone(null);
+    setAuthError(null);
+    if (APP_CONFIG.demoMode) {
+      try {
+        window.sessionStorage.removeItem(DEMO_STORAGE_KEY);
+      } catch {
+        // Nothing else is required to clear the in-memory demo session.
+      }
+      return;
+    }
+    await supabase?.auth.signOut();
+  }, []);
+
+  const value = useMemo(
+    () => ({
+      usuario,
+      loading,
+      pendingPhone,
+      authError,
+      login,
+      verifyOtp,
+      clearPendingOtp,
+      logout,
+    }),
+    [usuario, loading, pendingPhone, authError, login, verifyOtp, clearPendingOtp, logout]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export function useAuth() {
+export function useAuth(): AuthContextType {
   const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth debe usarse dentro de AuthProvider");
   return context;
 }

@@ -1,762 +1,301 @@
 "use client";
+/* User-selected data URLs are intentionally rendered without next/image. */
+/* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
+import { ArrowLeft, ImagePlus, MessageCircle, Send, UserRound, Wifi, WifiOff, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  MessageCircle,
-  Send,
-  User,
-  ArrowLeft,
-  Wifi,
-  WifiOff,
-  ImagePlus,
-  X,
-} from "lucide-react";
-import {
-  supabase,
-  type Usuario,
-  type MensajeChat,
-  type EstadisticasConversacion,
-} from "@/lib/supabase";
-import { APP_CONFIG } from "@/lib/app-config";
-import { DEMO_USUARIO } from "@/lib/demo-data";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/auth-context";
-import { ensureNotificationPermission, notify } from "@/lib/browser-notifications";
-import { logger } from "@/lib/logger";
-import {
-  composeMessageWithImage,
-  fileToDataUrl,
-  isImageFile,
-  parseMessageMedia,
-} from "@/lib/message-media";
+import { APP_CONFIG } from "@/lib/app-config";
+import { addDemoMessage, DEMO_PROFILES, getDemoMessages, markDemoConversationRead } from "@/lib/demo-data";
+import { formatFreshness, formatTime } from "@/lib/date-utils";
+import { notify } from "@/lib/browser-notifications";
+import { composeMessageWithImage, fileToDataUrl, parseMessageMedia, validateImageFile } from "@/lib/message-media";
+import { isUuid, supabase, type EstadisticasConversacion, type MensajeChat, type PublicProfile } from "@/lib/supabase";
 
-const OFFLINE_USERS: Usuario[] = [
-  DEMO_USUARIO,
-  {
-    id: "demo-maria",
-    nombre: "María González",
-    telefono: "+56 9 1234 5678",
-    fecha_creacion: new Date().toISOString(),
-  },
-  {
-    id: "demo-carlos",
-    nombre: "Carlos Muñoz",
-    telefono: "+56 9 9876 5432",
-    fecha_creacion: new Date().toISOString(),
-  },
-];
+const MAX_MESSAGE_CHARS = 1_000;
+
+function participantIds(message: MensajeChat, currentId: string, otherId: string): boolean {
+  return (
+    (message.emisor_id === currentId && message.receptor_id === otherId) ||
+    (message.emisor_id === otherId && message.receptor_id === currentId)
+  );
+}
 
 export default function ChatComponent() {
-  const [conversaciones, setConversaciones] = useState<
-    EstadisticasConversacion[]
-  >([]);
-  const [usuarioSeleccionado, setUsuarioSeleccionado] =
-    useState<Usuario | null>(null);
-  const [mensajes, setMensajes] = useState<MensajeChat[]>([]);
-  const [nuevoMensaje, setNuevoMensaje] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [enviando, setEnviando] = useState(false);
+  const { usuario } = useAuth();
+  const [profiles, setProfiles] = useState<PublicProfile[]>(() => (APP_CONFIG.demoMode ? DEMO_PROFILES : []));
+  const [messages, setMessages] = useState<MensajeChat[]>(() => (APP_CONFIG.demoMode ? getDemoMessages() : []));
+  const [selectedProfile, setSelectedProfile] = useState<PublicProfile | null>(null);
+  const [draft, setDraft] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [conectado, setConectado] = useState(true);
-  const [conversacionesLeidas, setConversacionesLeidas] = useState<Set<string>>(
-    new Set()
-  ); // IDs de conversaciones marcadas como leídas
-  const { usuario } = useAuth();
-  const mensajesEndRef = useRef<HTMLDivElement>(null);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [connected, setConnected] = useState(APP_CONFIG.demoMode);
+  const [error, setError] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Solicitar permisos de notificación al montar el componente
   useEffect(() => {
-    void ensureNotificationPermission();
-  }, []);
-
-  // Función para recargar estadísticas de conversaciones
-  const recargarConversaciones = useCallback(async () => {
-    if (APP_CONFIG.demoMode && usuario) {
-      const data = OFFLINE_USERS
-        .filter((u) => u.id !== usuario.id)
-        .map((u) => ({
-          usuario: u,
-          mensajesNoLeidos: 0,
-          fechaUltimaActividad: new Date().toISOString(),
-        })) as EstadisticasConversacion[];
-      setConversaciones(data);
-      return;
-    }
-
-    if (!supabase || !usuario) return;
-
-    try {
-      logger.debug("🔄 Recargando estadísticas de conversaciones...");
-      logger.debug("👤 Usuario actual:", usuario.id);
-      logger.debug(
-        "📖 Conversaciones marcadas como leídas:",
-        Array.from(conversacionesLeidas)
-      );
-
-      // Obtener todos los usuarios excepto el actual
-      const { data: todosUsuarios, error: errorUsuarios } = await supabase
-        .from("usuarios")
-        .select("*")
-        .neq("id", usuario.id)
-        .order("nombre");
-
-      if (errorUsuarios || !todosUsuarios) {
-        logger.error("Error cargando usuarios:", errorUsuarios);
+    let mounted = true;
+    const loadChat = async () => {
+      if (!usuario) return;
+      if (APP_CONFIG.demoMode) {
+        if (mounted) {
+          setProfiles(DEMO_PROFILES.filter((profile) => profile.id !== usuario.id));
+          setMessages(getDemoMessages());
+          setConnected(true);
+          setLoading(false);
+        }
+        return;
+      }
+      if (!supabase || !isUuid(usuario.id)) {
+        if (mounted) {
+          setError("Chat persistente no disponible: la sesión no tiene un identificador válido.");
+          setConnected(false);
+          setLoading(false);
+        }
         return;
       }
 
-      logger.debug("👥 Usuarios encontrados:", todosUsuarios.length);
+      const [{ data: profileData, error: profileError }, { data: messageData, error: messageError }] = await Promise.all([
+        supabase.from("perfiles_publicos").select("id, nombre, rol, fecha_creacion").neq("id", usuario.id).order("nombre"),
+        supabase.from("mensajes_chat").select("id, emisor_id, receptor_id, mensaje, fecha_envio, leido, fecha_lectura").or(`emisor_id.eq.${usuario.id},receptor_id.eq.${usuario.id}`).order("fecha_envio", { ascending: true }).limit(200),
+      ]);
 
-      // Para cada usuario, obtener estadísticas de conversación
-      const estadisticasPromises = todosUsuarios.map(async (otroUsuario) => {
-        if (!supabase) return null;
+      if (!mounted) return;
+      if (profileError || messageError) {
+        setError("No pudimos cargar tus conversaciones. Revisa la configuración de Supabase.");
+      } else {
+        setProfiles((profileData as PublicProfile[]) || []);
+        setMessages((messageData as MensajeChat[]) || []);
+      }
+      setConnected(!profileError && !messageError);
+      setLoading(false);
+    };
 
-        // Obtener el último mensaje de la conversación (consulta simplificada)
-        const { data: ultimoMensaje, error: errorMensaje } = await supabase
-          .from("mensajes_chat")
-          .select("id, emisor_id, receptor_id, mensaje, fecha_envio")
-          .or(
-            `and(emisor_id.eq.${usuario.id},receptor_id.eq.${otroUsuario.id}),and(emisor_id.eq.${otroUsuario.id},receptor_id.eq.${usuario.id})`
-          )
-          .order("fecha_envio", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+    void loadChat();
+    if (APP_CONFIG.demoMode || !supabase || !usuario || !isUuid(usuario.id)) return () => { mounted = false; };
 
-        if (errorMensaje) {
-          logger.error("Error obteniendo último mensaje:", errorMensaje);
+    const channel = supabase
+      .channel(`vulcania-chat-${usuario.id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensajes_chat" }, (payload) => {
+        const nextMessage = payload.new as MensajeChat;
+        if (nextMessage.emisor_id !== usuario.id && nextMessage.receptor_id !== usuario.id) return;
+        if (nextMessage.emisor_id !== usuario.id && nextMessage.receptor_id === usuario.id) {
+          notify("Nuevo mensaje", {
+            body: "Recibiste un mensaje en el chat comunitario.",
+            tag: `chat-${nextMessage.id}`,
+          });
         }
+        setMessages((current) => current.some((message) => message.id === nextMessage.id) ? current : [...current, nextMessage]);
+      })
+      .subscribe((status) => {
+        if (mounted) setConnected(status === "SUBSCRIBED");
+      });
 
-        // Lógica simplificada para mensajes no leídos (solo estado local)
-        let mensajesNoLeidos = 0;
+    return () => {
+      mounted = false;
+      void channel.unsubscribe();
+    };
+  }, [usuario]);
 
-        // Solo mostrar badge si:
-        // 1. Hay un último mensaje
-        // 2. El último mensaje es del otro usuario (no mío)
-        // 3. No hemos marcado esta conversación como leída localmente
-        if (
-          ultimoMensaje &&
-          ultimoMensaje.emisor_id === otroUsuario.id &&
-          !conversacionesLeidas.has(otroUsuario.id)
-        ) {
-          // Mostrar 1 mensaje no leído (sin hacer consultas adicionales a la DB)
-          mensajesNoLeidos = 1;
-          logger.debug(
-            `📬 Usuario ${otroUsuario.nombre} tiene mensajes no leídos`
-          );
-        } else {
-          logger.debug(
-            `✅ Usuario ${otroUsuario.nombre} - sin mensajes no leídos`
-          );
-        }
-
-        const estadistica: EstadisticasConversacion = {
-          usuario: otroUsuario,
-          ultimoMensaje: ultimoMensaje || undefined,
-          mensajesNoLeidos: mensajesNoLeidos,
-          fechaUltimaActividad:
-            ultimoMensaje?.fecha_envio || otroUsuario.fecha_creacion,
+  const conversations = useMemo<EstadisticasConversacion[]>(() => {
+    if (!usuario) return [];
+    return profiles
+      .map((profile) => {
+        const conversationMessages = messages.filter((message) => participantIds(message, usuario.id, profile.id));
+        const latest = conversationMessages.at(-1);
+        return {
+          usuario: profile,
+          ultimoMensaje: latest,
+          mensajesNoLeidos: conversationMessages.filter((message) => message.receptor_id === usuario.id && !message.leido).length,
+          fechaUltimaActividad: latest?.fecha_envio || profile.fecha_creacion || "",
         };
+      })
+      .sort((a, b) => b.fechaUltimaActividad.localeCompare(a.fechaUltimaActividad));
+  }, [messages, profiles, usuario]);
 
-        return estadistica;
-      });
+  const selectedMessages = useMemo(() => {
+    if (!usuario || !selectedProfile) return [];
+    return messages.filter((message) => participantIds(message, usuario.id, selectedProfile.id));
+  }, [messages, selectedProfile, usuario]);
 
-      const estadisticasResult = await Promise.all(estadisticasPromises);
-      const estadisticas = estadisticasResult.filter(
-        (e) => e !== null
-      ) as EstadisticasConversacion[];
-
-      // Ordenar por: 1) Mensajes no leídos (descendente), 2) Fecha de última actividad (descendente)
-      const estadisticasOrdenadas = estadisticas.sort((a, b) => {
-        if (a.mensajesNoLeidos !== b.mensajesNoLeidos) {
-          return b.mensajesNoLeidos - a.mensajesNoLeidos;
-        }
-        return (
-          new Date(b.fechaUltimaActividad).getTime() -
-          new Date(a.fechaUltimaActividad).getTime()
-        );
-      });
-
-      logger.debug("📊 Estadísticas cargadas:", estadisticasOrdenadas);
-      setConversaciones(estadisticasOrdenadas);
-    } catch (error) {
-      logger.error("Error recargando conversaciones:", error);
-    }
-  }, [usuario, conversacionesLeidas]);
-
-  // Cargar conversaciones al inicio
   useEffect(() => {
-    if (usuario) {
-      recargarConversaciones().then(() => setLoading(false));
-    }
-  }, [usuario, recargarConversaciones]);
+    const node = messagesEndRef.current;
+    if (node && typeof node.scrollIntoView === "function") node.scrollIntoView({ behavior: "auto" });
+  }, [selectedMessages.length]);
 
-  // Cargar mensajes y suscribirse a tiempo real
-  useEffect(() => {
-    if (APP_CONFIG.demoMode && usuarioSeleccionado) {
-      const demoMsgs: MensajeChat[] = [
-        {
-          id: "demo-msg-1",
-          emisor_id: usuarioSeleccionado.id,
-          receptor_id: usuario?.id || "",
-          mensaje: "Este es un chat de demostración sin backend.",
-          fecha_envio: new Date(Date.now() - 120000).toISOString(),
-        },
-        {
-          id: "demo-msg-2",
-          emisor_id: usuario?.id || "",
-          receptor_id: usuarioSeleccionado.id,
-          mensaje: "Perfecto, funcionando en modo offline demo.",
-          fecha_envio: new Date(Date.now() - 60000).toISOString(),
-        },
-      ];
-      setMensajes(demoMsgs);
+  const selectConversation = async (profile: PublicProfile) => {
+    if (!usuario) return;
+    setSelectedProfile(profile);
+    setError("");
+    if (APP_CONFIG.demoMode) {
+      setMessages(markDemoConversationRead(usuario.id, profile.id));
       return;
     }
 
-    if (!usuarioSeleccionado || !usuario || !supabase) return;
-
-    const cargarMensajes = async () => {
-      if (!supabase) return;
-
-      try {
-        const { data, error } = await supabase
-          .from("mensajes_chat")
-          .select(
-            `
-            *,
-            emisor:emisor_id (id, nombre),
-            receptor:receptor_id (id, nombre)
-          `
-          )
-          .or(
-            `and(emisor_id.eq.${usuario.id},receptor_id.eq.${usuarioSeleccionado.id}),and(emisor_id.eq.${usuarioSeleccionado.id},receptor_id.eq.${usuario.id})`
-          )
-          .order("fecha_envio", { ascending: true });
-
-        if (error) {
-          logger.error("Error cargando mensajes:", error);
-          return;
-        }
-
-        setMensajes(data || []);
-      } catch (error) {
-        logger.error("Error:", error);
-      }
-    };
-
-    cargarMensajes();
-
-    // Suscribirse a nuevos mensajes en tiempo real
-    logger.debug("🔄 Configurando suscripción en tiempo real para mensajes...");
-
-    const subscription = supabase
-      .channel(`mensajes_chat_${usuario.id}_${usuarioSeleccionado.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "mensajes_chat",
-          filter: `or(and(emisor_id.eq.${usuario.id},receptor_id.eq.${usuarioSeleccionado.id}),and(emisor_id.eq.${usuarioSeleccionado.id},receptor_id.eq.${usuario.id}))`,
-        },
-        async (payload) => {
-          logger.debug("📨 Nuevo mensaje recibido en tiempo real:", payload);
-
-          const nuevoMensaje = payload.new as MensajeChat;
-
-          // Verificar que el mensaje es para esta conversación
-          if (
-            (nuevoMensaje.emisor_id === usuario.id &&
-              nuevoMensaje.receptor_id === usuarioSeleccionado.id) ||
-            (nuevoMensaje.emisor_id === usuarioSeleccionado.id &&
-              nuevoMensaje.receptor_id === usuario.id)
-          ) {
-            // Obtener los datos completos del mensaje con los usuarios
-            try {
-              if (!supabase) return;
-
-              const { data: mensajeCompleto, error } = await supabase
-                .from("mensajes_chat")
-                .select(
-                  `
-                  *,
-                  emisor:emisor_id (id, nombre),
-                  receptor:receptor_id (id, nombre)
-                `
-                )
-                .eq("id", nuevoMensaje.id)
-                .single();
-
-              if (!error && mensajeCompleto) {
-                logger.debug(
-                  "✅ Añadiendo mensaje en tiempo real:",
-                  mensajeCompleto
-                );
-
-                // Agregar el mensaje solo si no existe ya (evitar duplicados)
-                setMensajes((prev) => {
-                  const existe = prev.some((m) => m.id === mensajeCompleto.id);
-                  if (existe) {
-                    logger.debug("⚠️ Mensaje ya existe, evitando duplicado");
-                    return prev;
-                  }
-
-                  // Si recibimos un mensaje en la conversación activa, agregarlo inmediatamente
-                  return [...prev, mensajeCompleto];
-                });
-              }
-            } catch (error) {
-              logger.error("❌ Error obteniendo mensaje completo:", error);
-            }
-          }
-        }
-      )
-      .subscribe((status) => {
-        logger.debug("📡 Estado de suscripción:", status);
-
-        // Actualizar estado de conexión basado en el status
-        if (status === "SUBSCRIBED") {
-          setConectado(true);
-          logger.debug("🟢 Conectado en tiempo real");
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-          setConectado(false);
-          logger.debug("🔴 Error de conexión en tiempo real");
-        }
-      });
-
-    return () => {
-      logger.debug("🔌 Desconectando suscripción en tiempo real");
-      subscription.unsubscribe();
-    };
-  }, [usuarioSeleccionado, usuario, recargarConversaciones]);
-
-  // Suscripción global para escuchar TODOS los mensajes dirigidos al usuario actual
-  useEffect(() => {
-    if (APP_CONFIG.demoMode) return;
-
-    if (!usuario || !supabase) return;
-
-    logger.debug(
-      "🌐 Configurando suscripción global para mensajes dirigidos al usuario..."
-    );
-
-    const globalSubscription = supabase
-      .channel(`global_mensajes_${usuario.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "mensajes_chat",
-          filter: `receptor_id.eq.${usuario.id}`,
-        },
-        async (payload) => {
-          logger.debug("🌐 Nuevo mensaje global recibido:", payload);
-
-          const nuevoMensaje = payload.new as MensajeChat;
-
-          // Si el mensaje NO es de la conversación actualmente abierta,
-          // marcar esa conversación como "no leída"
-          if (
-            !usuarioSeleccionado ||
-            nuevoMensaje.emisor_id !== usuarioSeleccionado.id
-          ) {
-            setConversacionesLeidas((prev) => {
-              const nuevasLeidas = new Set(prev);
-              nuevasLeidas.delete(nuevoMensaje.emisor_id);
-              return nuevasLeidas;
-            });
-
-            notify("Nuevo mensaje", "Recibiste un mensaje en el chat comunitario");
-
-            // Recargar conversaciones para actualizar el badge
-            recargarConversaciones();
-          }
-        }
-      )
-      .subscribe((status) => {
-        logger.debug("📡 Estado de suscripción global:", status);
-      });
-
-    return () => {
-      logger.debug("🔌 Desconectando suscripción global");
-      globalSubscription.unsubscribe();
-    };
-  }, [usuario, usuarioSeleccionado, recargarConversaciones]);
-
-  // Auto-scroll cuando lleguen nuevos mensajes
-  useEffect(() => {
-    if (mensajesEndRef.current) {
-      mensajesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    if (!supabase || !isUuid(usuario.id) || !isUuid(profile.id)) {
+      setError("No hay una sesión persistente válida para actualizar la lectura.");
+      return;
     }
-  }, [mensajes]);
 
-  // Función para seleccionar usuario y marcar la conversación como leída
-  const seleccionarUsuario = async (user: Usuario) => {
-    setUsuarioSeleccionado(user);
-
-    // Marcar esta conversación como leída localmente
-    setConversacionesLeidas((prev) => new Set(prev.add(user.id)));
-
-    logger.debug(
-      "📖 Marcando conversación como leída para usuario:",
-      user.nombre
+    const hasUnread = messages.some(
+      (message) => participantIds(message, usuario.id, profile.id) && message.receptor_id === usuario.id && !message.leido
     );
+    if (!hasUnread) return;
+
+    const { data, error: markReadError } = await supabase
+      .from("mensajes_chat")
+      .update({ leido: true, fecha_lectura: new Date().toISOString() })
+      .eq("emisor_id", profile.id)
+      .eq("receptor_id", usuario.id)
+      .eq("leido", false)
+      .select("id");
+
+    if (markReadError || !data?.length) {
+      setError("No pudimos guardar que leíste la conversación. Reintenta.");
+      return;
+    }
+
+    setMessages((current) => current.map((message) => participantIds(message, usuario.id, profile.id) && message.receptor_id === usuario.id ? { ...message, leido: true, fecha_lectura: new Date().toISOString() } : message));
   };
 
-  const enviarMensaje = async () => {
-    if (APP_CONFIG.demoReadOnly) {
-      logger.warn("Modo demo activo: chat en solo lectura");
-      return;
-    }
-
-    if ((!nuevoMensaje.trim() && !imageFile) || !usuario || !usuarioSeleccionado || !supabase)
-      return;
-
-    const mensajeOriginal = nuevoMensaje.trim();
-    const fileOriginal = imageFile;
-    setNuevoMensaje("");
+  const clearImage = () => {
     setImageFile(null);
     setImagePreview(null);
-    setEnviando(true);
+  };
 
-    try {
-      let imageUrl: string | undefined;
-
-      if (fileOriginal) {
-        imageUrl = await fileToDataUrl(fileOriginal);
-      }
-
-      const mensajeTexto = composeMessageWithImage(mensajeOriginal, imageUrl);
-
-      const { data, error } = await supabase
-        .from("mensajes_chat")
-        .insert([
-          {
-            emisor_id: usuario.id,
-            receptor_id: usuarioSeleccionado.id,
-            mensaje: mensajeTexto,
-          },
-        ])
-        .select(`
-          *,
-          emisor:emisor_id (id, nombre),
-          receptor:receptor_id (id, nombre)
-        `);
-
-      if (error) {
-        logger.error("Error enviando mensaje:", error);
-        setNuevoMensaje(mensajeOriginal);
-        setImageFile(fileOriginal ?? null);
-        setImagePreview(fileOriginal ? await fileToDataUrl(fileOriginal) : null);
-        return;
-      }
-
-      if (data && data[0]) {
-        setMensajes((prev) => [...prev, data[0]]);
-      }
-
-      recargarConversaciones();
-    } catch (error) {
-      logger.error("Error:", error);
-      setNuevoMensaje(mensajeOriginal);
-      setImageFile(fileOriginal ?? null);
-      if (fileOriginal) {
-        setImagePreview(await fileToDataUrl(fileOriginal));
-      }
-    } finally {
-      setEnviando(false);
+  const handleImage = async (file: File | undefined) => {
+    if (!file) return;
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      setError(validation.message ?? "No se pudo adjuntar la imagen.");
+      return;
     }
+    setError("");
+    setImageFile(file);
+    setImagePreview(await fileToDataUrl(file));
   };
 
-  const formatearHora = (fechaISO: string) => {
-    const fecha = new Date(fechaISO);
-    return fecha.toLocaleTimeString("es-CL", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  const sendMessage = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (APP_CONFIG.demoReadOnly) {
+      setError("El modo demo está configurado como solo lectura.");
+      return;
+    }
+    if (!usuario || !selectedProfile || (!draft.trim() && !imageFile)) {
+      setError("Escribe un mensaje o adjunta una imagen antes de enviar.");
+      return;
+    }
+    if (!APP_CONFIG.demoMode && (!supabase || !isUuid(usuario.id) || !isUuid(selectedProfile.id))) {
+      setError("No hay una sesión persistente válida para enviar mensajes.");
+      return;
+    }
 
-  // Función para resetear el estado de conversaciones leídas (útil para debugging)
-  const resetearEstadoLeido = () => {
-    logger.debug("🔄 Reseteando estado de conversaciones leídas...");
-    setConversacionesLeidas(new Set());
-    recargarConversaciones();
+    const originalDraft = draft.trim();
+    const originalFile = imageFile;
+    setSending(true);
+    setError("");
+    try {
+      const imageUrl = originalFile ? await fileToDataUrl(originalFile) : undefined;
+      const messageText = composeMessageWithImage(originalDraft, imageUrl);
+      if (APP_CONFIG.demoMode) {
+        const nextMessage: MensajeChat = {
+          id: `demo-message-${Date.now()}`,
+          emisor_id: usuario.id,
+          receptor_id: selectedProfile.id,
+          mensaje: messageText,
+          fecha_envio: new Date().toISOString(),
+          leido: true,
+        };
+        setMessages(addDemoMessage(nextMessage));
+      } else if (supabase) {
+        const { data, error: insertError } = await supabase.from("mensajes_chat").insert({
+          emisor_id: usuario.id,
+          receptor_id: selectedProfile.id,
+          mensaje: messageText,
+        }).select("id, emisor_id, receptor_id, mensaje, fecha_envio, leido, fecha_lectura").single();
+        if (insertError || !data) throw insertError ?? new Error("No se recibió el mensaje creado.");
+        setMessages((current) => current.some((message) => message.id === data.id) ? current : [...current, data as MensajeChat]);
+      }
+      setDraft("");
+      clearImage();
+    } catch {
+      setError("No se pudo enviar el mensaje. Inténtalo nuevamente.");
+    } finally {
+      setSending(false);
+    }
   };
 
   if (loading) {
-    return (
-      <div className="text-center py-8">
-        <div className="w-8 h-8 border-2 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-        <p className="text-gray-400">Cargando chat...</p>
-      </div>
-    );
+    return <div className="rounded-xl border border-border/70 bg-card/50 p-10 text-center text-sm text-muted-foreground">Cargando conversaciones…</div>;
   }
 
-  if (!usuarioSeleccionado) {
+  if (!selectedProfile) {
     return (
-      <div className="space-y-4">
-        <h3 className="text-xl font-semibold text-white flex items-center justify-between">
-          <div className="flex items-center">
-            <MessageCircle className="h-6 w-6 mr-2 text-green-500" />
-            Chat Comunitario
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={resetearEstadoLeido}
-            className="text-xs bg-gray-800 border-gray-700 hover:bg-gray-700"
-          >
-            🔄 Reset
-          </Button>
-        </h3>
-
-        <div className="space-y-3">
-          {conversaciones.length === 0 ? (
-            <div className="text-center py-8">
-              <User className="h-12 w-12 text-gray-600 mx-auto mb-2" />
-              <p className="text-gray-400">No hay otros usuarios disponibles</p>
-            </div>
-          ) : (
-            conversaciones.map((conversacion) => (
-              <Card
-                key={conversacion.usuario.id}
-                className={`bg-gray-900 border-gray-800 cursor-pointer hover:border-green-700 transition-colors ${
-                  conversacion.mensajesNoLeidos > 0 ? "border-green-600/50" : ""
-                }`}
-                onClick={() => seleccionarUsuario(conversacion.usuario)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-center space-x-3">
-                    <div className="relative">
-                      <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center">
-                        <span className="text-white font-medium text-lg">
-                          {conversacion.usuario.nombre.charAt(0)}
-                        </span>
-                      </div>
-                      {/* Badge de mensajes no leídos */}
-                      {conversacion.mensajesNoLeidos > 0 && (
-                        <div className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center">
-                          <span className="text-white text-xs font-bold">
-                            {conversacion.mensajesNoLeidos > 9
-                              ? "9+"
-                              : conversacion.mensajesNoLeidos}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h4
-                          className={`font-medium ${
-                            conversacion.mensajesNoLeidos > 0
-                              ? "text-white"
-                              : "text-gray-300"
-                          }`}
-                        >
-                          {conversacion.usuario.nombre}
-                        </h4>
-                        {conversacion.ultimoMensaje && (
-                          <span className="text-xs text-gray-500">
-                            {formatearHora(
-                              conversacion.ultimoMensaje.fecha_envio
-                            )}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Vista previa del último mensaje */}
-                      {conversacion.ultimoMensaje ? (
-                        <p
-                          className={`text-sm truncate ${
-                            conversacion.mensajesNoLeidos > 0
-                              ? "text-gray-300"
-                              : "text-gray-500"
-                          }`}
-                        >
-                          {conversacion.ultimoMensaje.emisor_id === usuario?.id
-                            ? "Tú: "
-                            : ""}
-                          {conversacion.ultimoMensaje.mensaje}
-                        </p>
-                      ) : (
-                        <p className="text-gray-500 text-sm">
-                          Toca para chatear
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
+      <section className="space-y-6" aria-labelledby="chat-title">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Coordinación directa</p>
+          <h2 id="chat-title" className="mt-1 font-display text-2xl font-semibold tracking-tight">Chat comunitario</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Conversaciones privadas entre personas verificadas.</p>
         </div>
-      </div>
+        {APP_CONFIG.demoMode ? <p className="rounded-lg border border-primary/20 bg-primary/[0.06] p-3 text-xs leading-5 text-muted-foreground"><strong className="text-foreground">Simulación demo:</strong> los mensajes se mantienen en memoria mientras esta pestaña está abierta.</p> : null}
+        {error ? <p role="alert" className="rounded-lg border border-yellow-300/25 bg-yellow-300/[0.06] p-3 text-sm text-yellow-100">{error}</p> : null}
+        {conversations.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center"><UserRound className="mx-auto size-8 text-muted-foreground" aria-hidden="true" /><p className="mt-3 font-display font-semibold">No hay conversaciones todavía</p><p className="mt-1 text-sm text-muted-foreground">Cuando haya otra persona disponible, aparecerá aquí.</p></div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {conversations.map((conversation) => (
+              <button key={conversation.usuario.id} type="button" onClick={() => void selectConversation(conversation.usuario)} className="group w-full rounded-xl border border-border/80 bg-card/60 p-4 text-left transition-colors hover:border-primary/50 hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-lg font-semibold text-primary">{conversation.usuario.nombre.charAt(0)}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2"><p className="truncate font-semibold">{conversation.usuario.nombre}</p>{conversation.ultimoMensaje ? <span className="font-mono text-[0.68rem] text-muted-foreground">{formatTime(conversation.ultimoMensaje.fecha_envio)}</span> : null}</div>
+                    <p className="mt-1 truncate text-sm text-muted-foreground">{conversation.ultimoMensaje ? `${conversation.ultimoMensaje.emisor_id === usuario?.id ? "Tú: " : ""}${parseMessageMedia(conversation.ultimoMensaje.mensaje).text || "Imagen compartida"}` : "Inicia una conversación"}</p>
+                  </div>
+                  {conversation.mensajesNoLeidos > 0 ? <span aria-live="polite" className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary font-mono text-xs text-primary-foreground">{conversation.mensajesNoLeidos > 9 ? "9+" : conversation.mensajesNoLeidos}</span> : null}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header del chat */}
-      <div className="flex items-center space-x-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setUsuarioSeleccionado(null)}
-          className="text-gray-400 hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center">
-          <span className="text-white font-medium">
-            {usuarioSeleccionado.nombre.charAt(0)}
-          </span>
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-white font-medium">
-              {usuarioSeleccionado.nombre}
-            </h3>
-            {conectado ? (
-              <span title="Conectado en tiempo real">
-                <Wifi className="h-4 w-4 text-green-500" />
-              </span>
-            ) : (
-              <span title="Sin conexión en tiempo real">
-                <WifiOff className="h-4 w-4 text-red-500" />
-              </span>
-            )}
-          </div>
-          <p className="text-gray-400 text-sm">
-            {conectado ? "En tiempo real" : "Sin conexión"} • Chat privado
-          </p>
-        </div>
+    <section className="space-y-4" aria-labelledby="conversation-title">
+      <div className="flex items-center gap-3">
+        <Button type="button" variant="ghost" size="icon" onClick={() => setSelectedProfile(null)} aria-label="Volver a conversaciones"><ArrowLeft aria-hidden="true" /></Button>
+        <div className="flex size-10 items-center justify-center rounded-full bg-primary/15 font-display font-semibold text-primary">{selectedProfile.nombre.charAt(0)}</div>
+        <div className="min-w-0 flex-1"><div className="flex items-center gap-2"><h2 id="conversation-title" className="truncate font-display text-xl font-semibold">{selectedProfile.nombre}</h2>{connected ? <Wifi className="size-4 text-emerald-300" aria-label="Conectado en tiempo real" /> : <WifiOff className="size-4 text-yellow-200" aria-label="Sin conexión en tiempo real" />}</div><p className="text-xs text-muted-foreground">{connected ? "Conexión en tiempo real" : "Último estado disponible"} · conversación privada</p></div>
+        <Badge variant="outline" className="hidden gap-1 border-border/80 text-muted-foreground sm:flex"><MessageCircle className="size-3" aria-hidden="true" /> Chat</Badge>
       </div>
 
-      {/* Área de mensajes */}
-      <Card className="bg-gray-900 border-gray-800">
+      <Card className="border-border/80 bg-card/60">
         <CardContent className="p-0">
-          <div className="h-96 p-4 overflow-y-auto">
-            {mensajes.length === 0 ? (
-              <div className="text-center py-8">
-                <MessageCircle className="h-12 w-12 text-gray-600 mx-auto mb-2" />
-                <p className="text-gray-400">No hay mensajes aún</p>
-                <p className="text-gray-500 text-sm">Envía el primer mensaje</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {mensajes.map((mensaje) => {
-                  const esMio = mensaje.emisor_id === usuario?.id;
-                  const { text, imageUrl } = parseMessageMedia(mensaje.mensaje);
-                  return (
-                    <div
-                      key={mensaje.id}
-                      className={`flex ${
-                        esMio ? "justify-end" : "justify-start"
-                      }`}
-                    >
-                      <div
-                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl ${
-                          esMio
-                            ? "bg-green-600 text-white"
-                            : "bg-gray-800 text-gray-200"
-                        }`}
-                      >
-                        {text ? <p className="text-sm">{text}</p> : null}
-                        {imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={imageUrl}
-                            alt="Imagen compartida"
-                            className="mt-2 rounded-md max-h-56 w-auto border border-white/20"
-                          />
-                        ) : null}
-                        <p
-                          className={`text-xs mt-1 ${
-                            esMio ? "text-green-200" : "text-gray-500"
-                          }`}
-                        >
-                          {formatearHora(mensaje.fecha_envio)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-                {/* Referencia para el auto-scroll */}
-                <div ref={mensajesEndRef} />
-              </div>
-            )}
+          <div className="min-h-[22rem] max-h-[32rem] overflow-y-auto p-4 sm:p-6" aria-live="polite">
+            {selectedMessages.length === 0 ? <div className="flex min-h-80 flex-col items-center justify-center text-center"><MessageCircle className="size-8 text-muted-foreground" aria-hidden="true" /><p className="mt-3 font-display font-semibold">Inicia la conversación</p><p className="mt-1 text-sm text-muted-foreground">Coordina información útil sin compartir datos sensibles.</p></div> : <div className="space-y-3">{selectedMessages.map((message) => { const mine = message.emisor_id === usuario?.id; const parsed = parseMessageMedia(message.mensaje); return <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}><div className={`max-w-[85%] rounded-2xl px-4 py-3 sm:max-w-md ${mine ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted text-foreground"}`}>{parsed.text ? <p className="whitespace-pre-wrap text-sm leading-6">{parsed.text}</p> : null}{parsed.imageUrl ? <img src={parsed.imageUrl} alt="Imagen compartida" className="mt-2 max-h-56 rounded-lg border border-white/20 object-contain" /> : null}<p className={`mt-2 text-[0.68rem] ${mine ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{formatTime(message.fecha_envio)} · {formatFreshness(message.fecha_envio).replace("Actualizado ", "")}</p></div></div>; })}<div ref={messagesEndRef} /></div>}
           </div>
         </CardContent>
       </Card>
 
-      {/* Input para nuevo mensaje */}
-      <div className="flex space-x-2">
-        {APP_CONFIG.demoReadOnly && (
-          <div className="w-full rounded-md border border-yellow-700 bg-yellow-900/20 p-3 text-sm text-yellow-200">
-            Modo demo: el chat está en solo lectura.
-          </div>
-        )}
-      </div>
-
-      {imagePreview ? (
-        <div className="relative w-fit">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imagePreview} alt="Vista previa" className="max-h-44 rounded-md border border-gray-700" />
-          <button
-            type="button"
-            className="absolute -top-2 -right-2 bg-black/80 text-white rounded-full p-1"
-            onClick={() => {
-              setImageFile(null);
-              setImagePreview(null);
-            }}
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      ) : null}
-
-      <div className="flex space-x-2 items-center">
-        <label className="cursor-pointer inline-flex items-center justify-center h-10 w-10 rounded-md border border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700">
-          <ImagePlus className="h-4 w-4" />
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            disabled={enviando || APP_CONFIG.demoReadOnly}
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              if (!isImageFile(file)) return;
-              setImageFile(file);
-              setImagePreview(await fileToDataUrl(file));
-            }}
-          />
+      {APP_CONFIG.demoReadOnly ? <p className="rounded-lg border border-yellow-300/30 bg-yellow-300/10 p-3 text-xs text-yellow-100">Modo demo solo lectura activado.</p> : null}
+      {imagePreview ? <div className="relative w-fit"><img src={imagePreview} alt="Vista previa del mensaje" className="max-h-36 rounded-lg border border-border object-contain" /><button type="button" onClick={clearImage} aria-label="Quitar imagen" className="absolute -right-3 -top-3 flex size-8 items-center justify-center rounded-full border border-border bg-background shadow-lg"><X className="size-4" aria-hidden="true" /></button></div> : null}
+      <form onSubmit={(event) => void sendMessage(event)} className="flex items-center gap-2">
+        <label className="inline-flex min-h-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-border bg-card/60 px-3 text-muted-foreground hover:bg-muted has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring" aria-label="Adjuntar imagen">
+          <ImagePlus className="size-4" aria-hidden="true" />
+          <input type="file" accept="image/*" className="sr-only" disabled={sending || APP_CONFIG.demoReadOnly} onChange={(event) => { void handleImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
         </label>
-
-        <Input
-          placeholder="Escribe un mensaje..."
-          value={nuevoMensaje}
-          onChange={(e) => setNuevoMensaje(e.target.value)}
-          onKeyPress={(e) => e.key === "Enter" && enviarMensaje()}
-          className="bg-gray-800 border-gray-700 text-white placeholder-gray-500 text-base"
-          disabled={enviando || APP_CONFIG.demoReadOnly}
-        />
-        <Button
-          onClick={enviarMensaje}
-          disabled={(!nuevoMensaje.trim() && !imageFile) || enviando || APP_CONFIG.demoReadOnly}
-          className="bg-green-600 hover:bg-green-700 text-white px-6"
-        >
-          {enviando ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
-          )}
-        </Button>
-      </div>
-    </div>
+        <Input value={draft} maxLength={MAX_MESSAGE_CHARS} onChange={(event) => { setDraft(event.target.value); setError(""); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void sendMessage(); } }} placeholder="Escribe un mensaje…" aria-label="Nuevo mensaje" disabled={sending || APP_CONFIG.demoReadOnly} className="min-h-11 bg-card/60" />
+        <Button type="submit" size="icon" disabled={sending || APP_CONFIG.demoReadOnly || (!draft.trim() && !imageFile)} aria-label="Enviar mensaje" className="size-11 shrink-0">{sending ? <span className="size-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" /> : <Send aria-hidden="true" />}</Button>
+      </form>
+      {error ? <p role="alert" className="text-sm leading-6 text-red-200">{error}</p> : null}
+    </section>
   );
 }

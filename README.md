@@ -38,6 +38,10 @@ NEXT_PUBLIC_ENABLE_ADMIN_PANEL="false"
 
 El acceso demo valida el formato de teléfono chileno, pero no representa una
 identidad real. No muestra un SMS ficticio ni crea una sesión Supabase.
+El panel de operador de demo se puede habilitar con
+`NEXT_PUBLIC_ENABLE_ADMIN_PANEL=true` para demostrar el flujo de emergencia;
+sus cambios quedan rotulados como simulación y no llaman RPC ni persisten fuera
+de la pestaña.
 
 ### Modo completo con Supabase
 
@@ -83,7 +87,10 @@ evitar ambigüedad en CI y despliegues.
    administrativo confiable. La UI no otorga permisos: las RPC y RLS vuelven a
    validar el rol en Supabase.
 5. Ejecuta `pnpm run doctor` con `SUPABASE_SERVICE_ROLE_KEY` para revisar entidades
-   y permisos sin imprimir secretos.
+   y permisos sin imprimir secretos. El doctor también verifica que
+   `alertas_volcan`, `puntos_encuentro`, `avisos_comunidad` y `mensajes_chat`
+   estén en `supabase_realtime`; si falla, vuelve a ejecutar `scripts/init.sql`
+   antes de desplegar.
 
 `scripts/init.sql` está pensado para una instalación limpia. Revisa cualquier
 esquema existente antes de aplicarlo en un proyecto con datos.
@@ -104,10 +111,14 @@ pnpm run deploy            # gates locales; no despliega producción por defecto
 pnpm run deploy -- --production # Vercel producción, solo con autorización explícita
 ```
 
+Las notificaciones de navegador son opt-in desde el botón de campana del
+encabezado. Solo se muestran para eventos entrantes cuando la pestaña está
+oculta; no se solicita permiso al cargar la app.
+
 El workflow `.github/workflows/ci.yml` repite los gates en cada pull request y
-push a `main` con Node 22 y pnpm 10.10.0. `pnpm test:coverage` aplica el
-baseline actual de cobertura (30% statements/lines, 60% branches, 70%
-functions) y no incluye artefactos generados por Next.
+push a `main` con Node 22 y pnpm 10.10.0. `pnpm test:coverage` aplica el floor
+global (80% statements/lines, 70% branches, 90% functions) y no incluye
+artefactos generados por Next.
 
 Gate recomendado antes de entregar:
 

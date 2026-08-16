@@ -13,6 +13,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { APP_CONFIG } from "@/lib/app-config";
 import { addDemoMessage, DEMO_PROFILES, getDemoMessages, markDemoConversationRead } from "@/lib/demo-data";
 import { formatFreshness, formatTime } from "@/lib/date-utils";
+import { notify } from "@/lib/browser-notifications";
 import { composeMessageWithImage, fileToDataUrl, parseMessageMedia, validateImageFile } from "@/lib/message-media";
 import { isUuid, supabase, type EstadisticasConversacion, type MensajeChat, type PublicProfile } from "@/lib/supabase";
 
@@ -85,6 +86,12 @@ export default function ChatComponent() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensajes_chat" }, (payload) => {
         const nextMessage = payload.new as MensajeChat;
         if (nextMessage.emisor_id !== usuario.id && nextMessage.receptor_id !== usuario.id) return;
+        if (nextMessage.emisor_id !== usuario.id && nextMessage.receptor_id === usuario.id) {
+          notify("Nuevo mensaje", {
+            body: "Recibiste un mensaje en el chat comunitario.",
+            tag: `chat-${nextMessage.id}`,
+          });
+        }
         setMessages((current) => current.some((message) => message.id === nextMessage.id) ? current : [...current, nextMessage]);
       })
       .subscribe((status) => {

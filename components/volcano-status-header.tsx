@@ -11,7 +11,7 @@ import { formatFreshness, formatLocalDateTime, isStale } from "@/lib/date-utils"
 import { getAlertLevelConfig } from "@/lib/alert-levels";
 
 export default function VolcanoStatusHeader() {
-  const { alerta, loading, hasError } = useAlert();
+  const { alerta, loading, hasError, realtimeStatus } = useAlert();
   const [, setClock] = useState(0);
 
   useEffect(() => {
@@ -29,7 +29,7 @@ export default function VolcanoStatusHeader() {
     );
   }
 
-  if (!alerta || hasError) {
+  if (!alerta) {
     return (
       <section className="border-y border-border/70 bg-card/70" aria-live="polite">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
@@ -87,6 +87,10 @@ export default function VolcanoStatusHeader() {
             </span>
             {alerta.referencia ? <span>Referencia: {alerta.referencia}</span> : null}
             {stale ? <span className="text-yellow-200">Información posiblemente desactualizada</span> : null}
+            {hasError ? <span className="text-yellow-200">Última lectura disponible; no pudimos actualizar ahora.</span> : null}
+            {!APP_CONFIG.demoMode && realtimeStatus && realtimeStatus !== "subscribed" ? (
+              <span className="text-yellow-200">Canal en tiempo real no confirmado; reintentando cada 30 s.</span>
+            ) : null}
           </div>
         </div>
 

@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { APP_CONFIG } from "@/lib/app-config";
 import { addDemoCommunity, getDemoCommunity } from "@/lib/demo-data";
 import { formatFreshness } from "@/lib/date-utils";
+import { notify } from "@/lib/browser-notifications";
 import { composeMessageWithImage, fileToDataUrl, parseMessageMedia, validateImageFile } from "@/lib/message-media";
 import { isSupabaseConfigured, supabase, type AvisoComunidad } from "@/lib/supabase";
 
@@ -66,6 +67,12 @@ export default function CommunityPanel() {
           const nextAviso = payload.new as AvisoComunidad;
           if (nextAviso.estado === "activo") {
             setAvisos((current) => [nextAviso, ...current.filter((aviso) => aviso.id !== nextAviso.id)].slice(0, 30));
+            if (nextAviso.usuario_id !== usuario?.id) {
+              notify("Nuevo aviso comunitario", {
+                body: "Hay un nuevo reporte en tu comunidad.",
+                tag: "community-feed",
+              });
+            }
           }
           return;
         }
@@ -77,7 +84,7 @@ export default function CommunityPanel() {
       mounted = false;
       void channel.unsubscribe();
     };
-  }, []);
+  }, [usuario]);
 
   const clearImage = () => {
     setImageFile(null);

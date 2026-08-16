@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeChainQuery, makeListQuery } from "./supabase-test-helpers";
 
-const { appConfigMock, supabaseMock, useAuthMocked } = vi.hoisted(() => ({
+const { appConfigMock, supabaseMock, useAuthMocked, notifyMock } = vi.hoisted(() => ({
   appConfigMock: { demoMode: true, demoReadOnly: false, enableAdminPanel: true },
   supabaseMock: {
     from: vi.fn(),
@@ -13,6 +13,7 @@ const { appConfigMock, supabaseMock, useAuthMocked } = vi.hoisted(() => ({
     })),
   },
   useAuthMocked: vi.fn(),
+  notifyMock: vi.fn(),
 }));
 
 vi.mock("@/lib/app-config", () => ({ APP_CONFIG: appConfigMock }));
@@ -22,6 +23,7 @@ vi.mock("@/lib/supabase", () => ({
   isSupabaseConfigured: () => Boolean(supabaseMock),
 }));
 vi.mock("@/contexts/auth-context", () => ({ useAuth: useAuthMocked }));
+vi.mock("@/lib/browser-notifications", () => ({ notify: notifyMock }));
 
 const USUARIO = {
   id: "demo-user",
@@ -43,6 +45,12 @@ describe("chat-component", () => {
     appConfigMock.demoMode = true;
     appConfigMock.demoReadOnly = false;
     supabaseMock.from.mockReset();
+    supabaseMock.channel.mockReset();
+    supabaseMock.channel.mockImplementation(() => ({
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })),
+    }));
+    notifyMock.mockReset();
     useAuthMocked.mockReset();
     useAuthMocked.mockReturnValue({ usuario: USUARIO });
   });
@@ -204,5 +212,40 @@ describe("chat-component", () => {
     expect(screen.getByText(/conversación privada/)).toBeInTheDocument();
     await waitFor(() => expect(loadBuilder.update).toHaveBeenCalled());
     expect(updateBuilder.select).toHaveBeenCalled();
+  });
+
+  it("notifica un mensaje entrante dirigido a la sesión", async () => {
+    appConfigMock.demoMode = false;
+    const currentId = "a3b8f4d2-1c5e-4f7a-9b6c-2d8e0f1a3b4c";
+    const otherId = "b4c9e5e3-2d6f-4f8b-9a7d-3e9f1a2b4c5d";
+    useAuthMocked.mockReturnValue({ usuario: { ...USUARIO, id: currentId } });
+    let realtimeHandler: ((payload: { new: unknown }) => void) | undefined;
+    const channel = {
+      on: vi.fn((_event: string, _filter: unknown, callback: (payload: { new: unknown }) => void) => {
+        realtimeHandler = callback;
+        return channel;
+      }),
+      subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })),
+    };
+    supabaseMock.channel.mockReturnValue(channel);
+    supabaseMock.from.mockImplementation((table: string) => {
+      if (table === "perfiles_publicos") {
+        return makeListQuery({ data: [{ id: otherId, nombre: "Carla", rol: "user" }], error: null });
+      }
+      return makeChainQuery("limit", { data: [], error: null });
+    });
+
+    const ChatComponent = await loadChatComponent();
+    render(<ChatComponent />);
+    await waitFor(() => expect(realtimeHandler).toBeDefined());
+
+    await act(async () => {
+      realtimeHandler?.({
+        new: { id: "incoming-message", emisor_id: otherId, receptor_id: currentId, mensaje: "Hola", fecha_envio: "2026-08-16T12:00:00.000Z", leido: false },
+      });
+    });
+
+    await waitFor(() => expect(notifyMock).toHaveBeenCalledTimes(1));
+    expect(notifyMock).toHaveBeenCalledWith("Nuevo mensaje", expect.objectContaining({ tag: "chat-incoming-message" }));
   });
 });

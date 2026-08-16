@@ -144,7 +144,7 @@ export default function LoginScreen() {
                     />
                   </div>
                   <p id="telefono-help" className="text-xs leading-5 text-muted-foreground">
-                    Formato válido: +56 9 XXXX XXXX.
+                    Formato válido: +56 9 XXXX XXXX. El 9 se agrega automáticamente después de +56.
                   </p>
                 </div>
 

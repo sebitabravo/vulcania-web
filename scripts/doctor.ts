@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { APP_CONFIG } from "../lib/app-config";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -28,6 +28,12 @@ const protectedTables = new Set([
   "mensajes_chat",
   "logs_sistema",
 ]);
+const realtimeTables = [
+  "alertas_volcan",
+  "puntos_encuentro",
+  "avisos_comunidad",
+  "mensajes_chat",
+] as const;
 
 function fail(message: string): never {
   console.error(`ERROR: ${message}`);
@@ -39,6 +45,26 @@ function classifyError(message: string): string {
   if (/permission denied|row-level security|policy/i.test(message)) return "RLS activa (sin sesión anon)";
   if (/fetch failed|network|timeout|ENOTFOUND|ECONNREFUSED|503|504/i.test(message)) return "error de red";
   return message;
+}
+
+function isPublicationHealth(data: unknown): data is Record<(typeof realtimeTables)[number], boolean> {
+  if (!data || typeof data !== "object") return false;
+  return realtimeTables.every((table) => typeof (data as Record<string, unknown>)[table] === "boolean");
+}
+
+async function verifyRealtimePublications(client: SupabaseClient) {
+  const { data, error } = await client.rpc("verificar_publicaciones_realtime");
+  if (error) {
+    fail(`Realtime no verificable: ${classifyError(error.message)}. Reejecuta scripts/init.sql.`);
+  }
+  if (!isPublicationHealth(data)) {
+    fail("Realtime no verificable: el health check no devolvió el contrato esperado. Reejecuta scripts/init.sql.");
+  }
+  const missing = realtimeTables.filter((table) => !data[table]);
+  if (missing.length > 0) {
+    fail(`Realtime incompleto: faltan ${missing.join(", ")}. Reejecuta scripts/init.sql y vuelve a correr pnpm doctor.`);
+  }
+  console.log(`OK: Realtime publication (${realtimeTables.join(", ")})`);
 }
 
 async function main() {
@@ -59,6 +85,8 @@ async function main() {
     fail(`Conexión inicial fallida: ${classifyError(pingError.message)}`);
   }
   console.log("OK: endpoint de Supabase accesible.");
+
+  await verifyRealtimePublications(adminClient || anonClient);
 
   for (const table of tables) {
     const client = adminClient || anonClient;

@@ -480,6 +480,39 @@ revoke execute on function public.cambiar_nivel_alerta(text), public.cambiar_est
 grant execute on function public.is_operator() to authenticated;
 revoke execute on function public.is_operator() from public, anon;
 
+-- Health check read-only para que `pnpm doctor` pueda detectar instalaciones
+-- existentes donde la publicación Realtime todavía no se aplicó.
+create or replace function public.verificar_publicaciones_realtime()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = pg_catalog, public
+as $$
+  select jsonb_build_object(
+    'alertas_volcan', exists (
+      select 1 from pg_catalog.pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'alertas_volcan'
+    ),
+    'puntos_encuentro', exists (
+      select 1 from pg_catalog.pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'puntos_encuentro'
+    ),
+    'avisos_comunidad', exists (
+      select 1 from pg_catalog.pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'avisos_comunidad'
+    ),
+    'mensajes_chat', exists (
+      select 1 from pg_catalog.pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'mensajes_chat'
+    )
+  );
+$$;
+
+revoke all on function public.verificar_publicaciones_realtime() from public;
+grant execute on function public.verificar_publicaciones_realtime() to anon, authenticated, service_role;
+revoke execute on function public.verificar_publicaciones_realtime() from public;
+
 -- ---------------------------------------------------------------------------
 -- 5. Seed inicial seguro e idempotente
 -- ---------------------------------------------------------------------------

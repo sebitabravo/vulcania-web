@@ -59,6 +59,7 @@ describe('LoginScreen', () => {
     renderLogin()
     expect(screen.getByPlaceholderText('+56 9 1234 5678')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Entrar al monitor demo/i })).toBeInTheDocument()
+    expect(screen.getByText(/El 9 se agrega automáticamente después de \+56/)).toBeInTheDocument()
   })
 
   it('mantiene atributos de accesibilidad del input', () => {

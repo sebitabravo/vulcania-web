@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import InteractiveMap from "@/components/interactive-map";
+import InteractiveMap, { streetViewUrl } from "@/components/interactive-map";
 
 // -- Mocks hoisted compartidos ---------------------------------------------
 
@@ -179,6 +179,59 @@ describe("interactive-map", () => {
         { animate: true }
       )
     );
+  });
+
+  it("restaura el enlace RA como Street View por coordenadas", async () => {
+    render(<InteractiveMap />);
+    const streetView = await screen.findByRole("link", { name: /Ver RA \(Street View\) de Estadio Pucón/ });
+    expect(streetView).toHaveAttribute("href", expect.stringContaining("api=1"));
+    expect(streetView).toHaveAttribute("href", expect.stringContaining("map_action=pano"));
+    expect(streetView).toHaveAttribute("href", expect.stringContaining("viewpoint=-39.2796%2C-71.9725"));
+    expect(streetViewUrl({
+      id: "test",
+      nombre: "Punto",
+      direccion: "",
+      latitud: -39.2,
+      longitud: -72.1,
+      capacidad: 1,
+      seguridad_nivel: 1,
+      tiempo_aprox_pie: 1,
+      ocupado: false,
+    })).toContain("map_action=pano");
+  });
+
+  it("no crea enlaces externos para coordenadas inválidas", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/demo-data", () => ({
+      DEMO_PUNTOS_ENCUENTRO: [{
+        id: "invalid-point",
+        nombre: "Punto inválido",
+        direccion: "Sin coordenadas confiables",
+        latitud: Number.NaN,
+        longitud: -72.1,
+        capacidad: 1,
+        seguridad_nivel: 1,
+        tiempo_aprox_pie: 1,
+        ocupado: false,
+      }],
+      DEMO_ZONAS_EXCLUSION: [],
+    }));
+
+    const { default: InteractiveMapInvalid } = await import("@/components/interactive-map");
+    render(<InteractiveMapInvalid />);
+    await waitFor(() => expect(screen.getByText("Punto inválido")).toBeInTheDocument());
+
+    const navigation = screen.getByText("Navegar").closest("a");
+    const map = screen.getByText("Ver mapa").closest("a");
+    const streetView = screen.getByText("Ver RA").closest("a");
+    expect(navigation).toHaveAttribute("aria-disabled", "true");
+    expect(navigation).not.toHaveAttribute("href");
+    expect(map).toHaveAttribute("aria-disabled", "true");
+    expect(map).not.toHaveAttribute("href");
+    expect(streetView).toHaveAttribute("aria-disabled", "true");
+    expect(streetView).not.toHaveAttribute("href");
+
+    vi.doUnmock("@/lib/demo-data");
   });
 
   it("respeta prefers-reduced-motion al centrar un punto", async () => {

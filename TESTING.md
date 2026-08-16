@@ -28,9 +28,9 @@ Para cobertura:
 pnpm test:coverage
 ```
 
-La cobertura usa V8, excluye `.next/`, `coverage/`, scripts y tests, y exige
-como baseline 30% de statements/lines, 60% de branches y 70% de functions.
-Es un piso de regresión, no evidencia de cobertura E2E.
+La cobertura usa V8, excluye `.next/`, `coverage/`, scripts y tests, y exige el
+floor global de 80% de statements/lines, 70% de branches y 90% de functions.
+Es un gate de código local, no evidencia de cobertura E2E contra Supabase.
 
 ## Suite actual
 
@@ -82,6 +82,12 @@ pnpm run doctor
 `doctor` no imprime claves. Las lecturas protegidas sin service role que
 devuelven RLS se reportan como protección esperada; para revisar todas las
 entidades usa un service role solo en el entorno administrativo adecuado.
+En modo completo, el doctor verifica además el RPC
+`verificar_publicaciones_realtime()` y las cuatro tablas de
+`supabase_realtime`; si el health check falla en una instalación existente,
+ejecuta nuevamente `scripts/init.sql` en el SQL Editor y repite el doctor. La
+demo puede habilitar el panel de operador para demostrar el flujo crítico,
+siempre rotulado como simulación.
 
 El workflow de GitHub ejecuta install frozen, lint, typecheck, tests, coverage y
 build en Node 22/pnpm 10.10.0.

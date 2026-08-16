@@ -1,6 +1,6 @@
 /**
  * Tests para la configuración de la aplicación
- * 
+ *
  * @vitest-environment node
  */
 
@@ -43,6 +43,13 @@ describe('APP_CONFIG', () => {
     const { APP_CONFIG } = await import('../lib/app-config')
     expect(typeof APP_CONFIG.demoPhone).toBe('string')
     expect(APP_CONFIG.demoPhone.length).toBeGreaterThan(0)
+  })
+
+  it('habilita el panel demo por defecto para que el flujo insignia sea demostrable', async () => {
+    process.env.NEXT_PUBLIC_DEMO_MODE = 'true'
+    delete process.env.NEXT_PUBLIC_ENABLE_ADMIN_PANEL
+    const { APP_CONFIG } = await import('../lib/app-config')
+    expect(APP_CONFIG.enableAdminPanel).toBe(true)
   })
 
   it('uses one resolver for explicit demo mode and Supabase fallback', async () => {

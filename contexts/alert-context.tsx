@@ -5,14 +5,33 @@ import { APP_CONFIG } from "@/lib/app-config";
 import { createDemoAlert, getDemoAlert } from "@/lib/demo-data";
 import { supabase, type AlertaVolcan } from "@/lib/supabase";
 
+export type RealtimeStatus = "idle" | "connecting" | "subscribed" | "channel_error" | "timed_out" | "closed";
+
 interface AlertContextValue {
   alerta: AlertaVolcan | null;
   loading: boolean;
   hasError: boolean;
+  realtimeStatus: RealtimeStatus;
   refresh: () => Promise<void>;
 }
 
 const AlertContext = createContext<AlertContextValue | undefined>(undefined);
+export const ALERT_FALLBACK_POLL_MS = 30_000;
+
+function mapRealtimeStatus(status: string): RealtimeStatus {
+  switch (status) {
+    case "SUBSCRIBED":
+      return "subscribed";
+    case "CHANNEL_ERROR":
+      return "channel_error";
+    case "TIMED_OUT":
+      return "timed_out";
+    case "CLOSED":
+      return "closed";
+    default:
+      return "connecting";
+  }
+}
 
 export function AlertProvider({ children }: { children: React.ReactNode }) {
   // Keep the first render deterministic. sessionStorage is read after hydration
@@ -20,40 +39,55 @@ export function AlertProvider({ children }: { children: React.ReactNode }) {
   const [alerta, setAlerta] = useState<AlertaVolcan | null>(() => (APP_CONFIG.demoMode ? createDemoAlert() : null));
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>(
+    APP_CONFIG.demoMode ? "idle" : supabase ? "connecting" : "channel_error"
+  );
   const mountedRef = useRef(true);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
 
   const refresh = useCallback(async () => {
-    if (APP_CONFIG.demoMode) {
-      if (!mountedRef.current) return;
-      setAlerta(getDemoAlert());
-      setHasError(false);
-      setLoading(false);
-      return;
-    }
+    if (refreshInFlightRef.current) return refreshInFlightRef.current;
 
-    if (!supabase) {
-      if (mountedRef.current) {
-        setHasError(true);
+    const request = Promise.resolve().then(async () => {
+      if (APP_CONFIG.demoMode) {
+        if (!mountedRef.current) return;
+        setAlerta(getDemoAlert());
+        setHasError(false);
         setLoading(false);
+        return;
       }
-      return;
-    }
 
-    const { data, error } = await supabase
-      .from("alertas_volcan")
-      .select("*, informacion_volcan(nombre)")
-      .order("ultima_actualizacion", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      if (!supabase) {
+        if (mountedRef.current) {
+          setHasError(true);
+          setLoading(false);
+        }
+        return;
+      }
 
-    if (!mountedRef.current) return;
-    if (error || !data) {
-      setHasError(true);
-    } else {
-      setAlerta(data as AlertaVolcan);
-      setHasError(false);
-    }
-    setLoading(false);
+      const { data, error } = await supabase
+        .from("alertas_volcan")
+        .select("*, informacion_volcan(nombre)")
+        .order("ultima_actualizacion", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!mountedRef.current) return;
+      if (error || !data) {
+        // Keep the last known alert. The header can then show stale/error
+        // context instead of replacing a real reading with an empty state.
+        setHasError(true);
+      } else {
+        setAlerta(data as AlertaVolcan);
+        setHasError(false);
+      }
+      setLoading(false);
+    }).finally(() => {
+      if (refreshInFlightRef.current === request) refreshInFlightRef.current = null;
+    });
+
+    refreshInFlightRef.current = request;
+    return request;
   }, []);
 
   useEffect(() => {
@@ -80,16 +114,23 @@ export function AlertProvider({ children }: { children: React.ReactNode }) {
     const channel = supabase
       .channel("vulcania-alert-source")
       .on("postgres_changes", { event: "*", schema: "public", table: "alertas_volcan" }, () => void refresh())
-      .subscribe();
+      .subscribe((status) => {
+        if (mountedRef.current) setRealtimeStatus(mapRealtimeStatus(status));
+      });
+    const fallbackPoll = window.setInterval(() => void refresh(), ALERT_FALLBACK_POLL_MS);
 
     return () => {
       mountedRef.current = false;
       window.clearTimeout(initialLoad);
+      window.clearInterval(fallbackPoll);
       void channel.unsubscribe();
     };
   }, [refresh]);
 
-  const value = useMemo(() => ({ alerta, loading, hasError, refresh }), [alerta, loading, hasError, refresh]);
+  const value = useMemo(
+    () => ({ alerta, loading, hasError, realtimeStatus, refresh }),
+    [alerta, loading, hasError, realtimeStatus, refresh]
+  );
 
   return <AlertContext.Provider value={value}>{children}</AlertContext.Provider>;
 }

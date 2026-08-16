@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeChainQuery, makeListQuery } from "./supabase-test-helpers";
 
-const { appConfigMock, supabaseRef, supabaseMock, supabaseConfiguredMock, useAuthMocked } = vi.hoisted(() => {
+const { appConfigMock, supabaseRef, supabaseMock, supabaseConfiguredMock, useAuthMocked, notifyMock } = vi.hoisted(() => {
   const supabaseMock = {
     from: vi.fn(),
     channel: vi.fn(() => ({
@@ -17,6 +17,7 @@ const { appConfigMock, supabaseRef, supabaseMock, supabaseConfiguredMock, useAut
     supabaseMock,
     supabaseConfiguredMock: { value: false },
     useAuthMocked: vi.fn(),
+    notifyMock: vi.fn(),
   };
 });
 
@@ -29,6 +30,7 @@ vi.mock("@/lib/supabase", () => ({
   isSupabaseConfigured: () => supabaseConfiguredMock.value,
 }));
 vi.mock("@/contexts/auth-context", () => ({ useAuth: useAuthMocked }));
+vi.mock("@/lib/browser-notifications", () => ({ notify: notifyMock }));
 
 const USUARIO = {
   id: "demo-user",
@@ -51,7 +53,13 @@ describe("community-panel", () => {
     appConfigMock.demoReadOnly = false;
     supabaseRef.current = supabaseMock;
     supabaseMock.from.mockReset();
+    supabaseMock.channel.mockReset();
+    supabaseMock.channel.mockImplementation(() => ({
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })),
+    }));
     supabaseConfiguredMock.value = false;
+    notifyMock.mockReset();
     useAuthMocked.mockReset();
     useAuthMocked.mockReturnValue({ usuario: USUARIO });
   });
@@ -163,5 +171,38 @@ describe("community-panel", () => {
     await user.click(screen.getByRole("button", { name: /Publicar reporte/ }));
 
     expect(await screen.findByText("Evacuación preventiva en sector bajo")).toBeInTheDocument();
+  });
+
+  it("notifica un reporte entrante de otra persona, pero no el propio", async () => {
+    appConfigMock.demoMode = false;
+    supabaseConfiguredMock.value = true;
+    let realtimeHandler: ((payload: { eventType: string; new: unknown }) => void) | undefined;
+    const channel = {
+      on: vi.fn((_event: string, _filter: unknown, callback: (payload: { eventType: string; new: unknown }) => void) => {
+        realtimeHandler = callback;
+        return channel;
+      }),
+      subscribe: vi.fn(() => ({ unsubscribe: vi.fn() })),
+    };
+    supabaseMock.channel.mockReturnValue(channel);
+    supabaseMock.from.mockImplementation(() => makeChainQuery("limit", { data: [], error: null }));
+
+    const CommunityPanel = await loadCommunityPanel();
+    render(<CommunityPanel />);
+    await waitFor(() => expect(realtimeHandler).toBeDefined());
+
+    await act(async () => {
+      realtimeHandler?.({
+        eventType: "INSERT",
+        new: { id: "incoming", usuario_id: "otro", autor_nombre: "Otra persona", mensaje: "Ruta despejada", fecha_creacion: "2026-08-16T12:00:00.000Z", estado: "activo" },
+      });
+      realtimeHandler?.({
+        eventType: "INSERT",
+        new: { id: "own", usuario_id: USUARIO.id, autor_nombre: USUARIO.nombre, mensaje: "Mi reporte", fecha_creacion: "2026-08-16T12:01:00.000Z", estado: "activo" },
+      });
+    });
+
+    await waitFor(() => expect(notifyMock).toHaveBeenCalledTimes(1));
+    expect(notifyMock).toHaveBeenCalledWith("Nuevo aviso comunitario", expect.objectContaining({ tag: "community-feed" }));
   });
 });

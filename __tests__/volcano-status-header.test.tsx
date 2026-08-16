@@ -89,6 +89,20 @@ describe("volcano-status-header", () => {
     expect(screen.getByText("Información posiblemente desactualizada")).toBeInTheDocument();
   });
 
+  it("conserva la última alerta y muestra el estado accionable si falla el refresh", () => {
+    appConfigMock.demoMode = false;
+    useAlertMocked.mockReturnValue({
+      alerta: alerta(),
+      loading: false,
+      hasError: true,
+      realtimeStatus: "channel_error",
+    });
+    render(<VolcanoStatusHeader />);
+    expect(screen.getByText("Volcán Villarrica")).toBeInTheDocument();
+    expect(screen.getByText(/Última lectura disponible/)).toBeInTheDocument();
+    expect(screen.getByText(/Canal en tiempo real no confirmado/)).toBeInTheDocument();
+  });
+
   it("usa el nombre oficial del volcán si la alerta lo trae", () => {
     useAlertMocked.mockReturnValue({
       alerta: alerta({ informacion_volcan: { nombre: "Villarrica" } }),

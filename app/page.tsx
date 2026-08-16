@@ -19,6 +19,7 @@ import { useAdminPanel } from "@/hooks/use-admin-panel";
 import LoginScreen from "@/components/login-screen";
 import VolcanoStatusHeader from "@/components/volcano-status-header";
 import ThemeToggle from "@/components/theme-toggle";
+import NotificationToggle from "@/components/notification-toggle";
 import { APP_CONFIG } from "@/lib/app-config";
 
 const MapComponent = dynamic(() => import("@/components/map-component"), {
@@ -51,7 +52,7 @@ export default function VulcaniaApp() {
   const canManage = Boolean(
     APP_CONFIG.enableAdminPanel &&
       usuario &&
-      (usuario.rol === "operator" || usuario.rol === "admin")
+      (APP_CONFIG.demoMode || usuario.rol === "operator" || usuario.rol === "admin")
   );
   const { showAdminPanel, openAdminPanel, closeAdminPanel } = useAdminPanel(canManage);
 
@@ -109,6 +110,7 @@ export default function VulcaniaApp() {
               </Button>
             ) : null}
             <ThemeToggle />
+            <NotificationToggle />
             <div className="hidden items-center gap-2 border-l border-border/70 pl-3 sm:flex">
               <div className="flex size-8 items-center justify-center rounded-full bg-primary/15 font-mono text-xs font-semibold text-primary">{userInitials}</div>
               <span className="max-w-28 truncate text-sm text-muted-foreground">{usuario.nombre}</span>
@@ -126,7 +128,8 @@ export default function VulcaniaApp() {
         <div className="mb-7 flex flex-col justify-between gap-5 md:flex-row md:items-end">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">Panel de situación</p>
-            <h1 className="mt-2 font-display text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Tu red, en un solo lugar.</h1>
+            <p className="mt-2 text-sm text-muted-foreground">Bienvenido, {usuario.nombre}.</p>
+            <h1 className="mt-1 font-display text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">Tu red, en un solo lugar.</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">Consulta puntos de encuentro, reportes vecinales y conversaciones de coordinación sin perder el contexto técnico.</p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

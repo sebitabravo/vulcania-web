@@ -39,6 +39,6 @@ export const APP_CONFIG = {
   defaultVolcanoName: "Villarrica",
   enableAdminPanel: toBoolean(
     process.env.NEXT_PUBLIC_ENABLE_ADMIN_PANEL,
-    !isDemoMode
+    true
   ),
 };

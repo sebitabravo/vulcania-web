@@ -1,475 +1,244 @@
 "use client";
+/* User-selected data URLs are intentionally rendered without next/image. */
+/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Clock3, ImagePlus, MessageSquareText, Send, ShieldCheck, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Users, Send, MessageCircle, Clock, ImagePlus, X } from "lucide-react";
-import {
-  supabase,
-  isSupabaseConfigured,
-  type AvisoComunidad,
-} from "@/lib/supabase";
-import { APP_CONFIG } from "@/lib/app-config";
-import { DEMO_AVISOS } from "@/lib/demo-data";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/contexts/auth-context";
-import { ensureNotificationPermission, notify } from "@/lib/browser-notifications";
-import { logger } from "@/lib/logger";
-import {
-  composeMessageWithImage,
-  fileToDataUrl,
-  isImageFile,
-  parseMessageMedia,
-} from "@/lib/message-media";
+import { APP_CONFIG } from "@/lib/app-config";
+import { addDemoCommunity, getDemoCommunity } from "@/lib/demo-data";
+import { formatFreshness } from "@/lib/date-utils";
+import { composeMessageWithImage, fileToDataUrl, parseMessageMedia, validateImageFile } from "@/lib/message-media";
+import { isSupabaseConfigured, supabase, type AvisoComunidad } from "@/lib/supabase";
+
+const MAX_MESSAGE_CHARS = 1_000;
 
 export default function CommunityPanel() {
-  const [avisos, setAvisos] = useState<AvisoComunidad[]>([]);
+  const { usuario } = useAuth();
+  const [avisos, setAvisos] = useState<AvisoComunidad[]>(() => (APP_CONFIG.demoMode ? getDemoCommunity() : []));
   const [nuevoMensaje, setNuevoMensaje] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [enviando, setEnviando] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const { usuario } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [enviando, setEnviando] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    void ensureNotificationPermission();
-  }, []);
-
-  // Verificar configuración de Supabase
-  useEffect(() => {
-    if (!isSupabaseConfigured()) {
+    let mounted = true;
+    const cargarAvisos = async () => {
       if (APP_CONFIG.demoMode) {
-        logger.debug("ℹ️ Supabase no configurado, usando modo demo offline");
-      } else {
-        logger.error("❌ Supabase no está configurado correctamente");
-      }
-      setLoading(false);
-      return;
-    }
-  }, []);
-
-  const cargarAvisos = async () => {
-    if (APP_CONFIG.demoMode) {
-      setAvisos(DEMO_AVISOS);
-      setLoading(false);
-      return;
-    }
-
-    if (!supabase) {
-      logger.error("❌ No se puede cargar avisos: Supabase no configurado");
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from("avisos_comunidad")
-        .select(
-          `
-          *,
-          usuarios (
-            id,
-            nombre,
-            telefono
-          )
-        `
-        )
-        .eq("estado", "activo")
-        .order("fecha_creacion", { ascending: false })
-        .limit(20);
-
-      if (error) {
-        logger.error("Error cargando avisos:", error);
+        if (mounted) {
+          setAvisos(getDemoCommunity());
+          setLoading(false);
+        }
         return;
       }
-
-      setAvisos(data || []);
-    } catch (error) {
-      logger.error("Error:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (APP_CONFIG.demoMode) {
-      setAvisos(DEMO_AVISOS);
-      setLoading(false);
-      return;
-    }
-
-    if (!supabase) {
-      logger.error(
-        "❌ No se puede configurar suscripción: Supabase no configurado"
-      );
-      setLoading(false);
-      return;
-    }
-
-    cargarAvisos();
-
-    // Suscribirse a cambios en tiempo real
-    const subscription = supabase
-      .channel("avisos_comunidad_changes")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "avisos_comunidad" },
-        () => {
-          notify("Nuevo aviso comunitario", "Se publicó un nuevo mensaje en la comunidad");
-          if (supabase) {
-            cargarAvisos();
-          }
+      if (!supabase) {
+        if (mounted) {
+          setError("Base de datos no configurada. El demo offline está disponible desde el acceso inicial.");
+          setLoading(false);
         }
-      )
+        return;
+      }
+      const { data, error: queryError } = await supabase
+        .from("avisos_comunidad")
+        .select("id, usuario_id, autor_nombre, mensaje, fecha_creacion, estado")
+        .eq("estado", "activo")
+        .order("fecha_creacion", { ascending: false })
+        .limit(30);
+      if (!mounted) return;
+      if (queryError) setError("No pudimos cargar los reportes. Reintenta en unos segundos.");
+      else setAvisos((data as AvisoComunidad[]) || []);
+      setLoading(false);
+    };
+
+    void cargarAvisos();
+    if (APP_CONFIG.demoMode || !supabase) return () => { mounted = false; };
+
+    const channel = supabase
+      .channel("vulcania-community-feed")
+      .on("postgres_changes", { event: "*", schema: "public", table: "avisos_comunidad" }, (payload) => {
+        if (payload.eventType === "INSERT") {
+          const nextAviso = payload.new as AvisoComunidad;
+          if (nextAviso.estado === "activo") {
+            setAvisos((current) => [nextAviso, ...current.filter((aviso) => aviso.id !== nextAviso.id)].slice(0, 30));
+          }
+          return;
+        }
+        void cargarAvisos();
+      })
       .subscribe();
 
     return () => {
-      subscription.unsubscribe();
+      mounted = false;
+      void channel.unsubscribe();
     };
   }, []);
 
-  const enviarAviso = async () => {
-    if (APP_CONFIG.demoReadOnly) {
-      logger.warn("Modo demo activo: envío de avisos bloqueado");
-      return;
-    }
-
-    if ((!nuevoMensaje.trim() && !imageFile) || !usuario) {
-      logger.warn("No se puede enviar: mensaje vacío o usuario no autenticado");
-      return;
-    }
-
-    if (!supabase) {
-      logger.error("❌ No se puede enviar aviso: Supabase no configurado");
-      return;
-    }
-
-    if (!usuario.id) {
-      logger.error("❌ No se puede enviar aviso: Usuario sin ID");
-      return;
-    }
-
-    logger.debug("Enviando aviso:", {
-      usuario_id: usuario.id,
-      mensaje: nuevoMensaje.trim(),
-      usuario: usuario,
-    });
-
-    // VERIFICAR que el usuario existe en la base de datos
-    logger.debug("🔍 Verificando usuario en base de datos...");
-    try {
-      const { data: usuarioVerificado, error: errorVerificacion } =
-        await supabase
-          .from("usuarios")
-          .select("*")
-          .eq("id", usuario.id)
-          .single();
-
-      if (errorVerificacion || !usuarioVerificado) {
-        logger.error("❌ Usuario no encontrado en base de datos:", {
-          usuario_id: usuario.id,
-          error: errorVerificacion,
-        });
-
-        alert(
-          "Error: Tu usuario no existe en la base de datos. Por favor, cierra sesión y vuelve a iniciar sesión."
-        );
-
-        // Limpiar sesión corrupta
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("vulcania_usuario");
-          window.location.reload();
-        }
-        return;
-      }
-
-      logger.debug("✅ Usuario verificado en base de datos:", usuarioVerificado);
-    } catch (verificationError) {
-      logger.error("❌ Error verificando usuario:", verificationError);
-      return;
-    }
-
-    const mensajeOriginal = nuevoMensaje.trim();
-    const fileOriginal = imageFile;
-    setNuevoMensaje("");
+  const clearImage = () => {
     setImageFile(null);
     setImagePreview(null);
+  };
+
+  const handleImage = async (file: File | undefined) => {
+    if (!file) return;
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      setError(validation.message ?? "No se pudo adjuntar la imagen.");
+      return;
+    }
+    setError("");
+    setImageFile(file);
+    setImagePreview(await fileToDataUrl(file));
+  };
+
+  const enviarAviso = async () => {
+    if (APP_CONFIG.demoReadOnly) {
+      setError("El modo demo está configurado como solo lectura.");
+      return;
+    }
+    if (!usuario || (!nuevoMensaje.trim() && !imageFile)) {
+      setError("Escribe un reporte o adjunta una imagen antes de enviar.");
+      return;
+    }
+    if (!APP_CONFIG.demoMode && !supabase) {
+      setError("No hay conexión con la base de datos.");
+      return;
+    }
+
+    const originalText = nuevoMensaje.trim();
+    const originalFile = imageFile;
     setEnviando(true);
-
+    setError("");
     try {
-      let imageUrl: string | undefined;
-      if (fileOriginal) {
-        imageUrl = await fileToDataUrl(fileOriginal);
-      }
-
-      const mensajeTexto = composeMessageWithImage(mensajeOriginal, imageUrl);
-
-      const { data, error } = await supabase.from("avisos_comunidad").insert([
-        {
+      const imageUrl = originalFile ? await fileToDataUrl(originalFile) : undefined;
+      const mensaje = composeMessageWithImage(originalText, imageUrl);
+      if (APP_CONFIG.demoMode) {
+        const aviso: AvisoComunidad = {
+          id: `demo-aviso-${Date.now()}`,
           usuario_id: usuario.id,
-          mensaje: mensajeTexto,
+          autor_nombre: usuario.nombre,
+          mensaje,
+          fecha_creacion: new Date().toISOString(),
           estado: "activo",
-        },
-      ]).select(`
-        *,
-        usuarios (
-          id,
-          nombre,
-          telefono
-        )
-      `);
-
-      if (error) {
-        logger.error("Error enviando aviso:", error);
-        logger.error("Detalles del error:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-        });
-        setNuevoMensaje(mensajeOriginal);
-        setImageFile(fileOriginal ?? null);
-        setImagePreview(fileOriginal ? await fileToDataUrl(fileOriginal) : null);
-        return;
+        };
+        setAvisos(addDemoCommunity(aviso));
+      } else if (supabase) {
+        const { data, error: insertError } = await supabase
+          .from("avisos_comunidad")
+          .insert({ usuario_id: usuario.id, mensaje })
+          .select("id, usuario_id, autor_nombre, mensaje, fecha_creacion, estado")
+          .single();
+        if (insertError || !data) throw insertError ?? new Error("No se recibió el reporte creado.");
+        setAvisos((current) => [data as AvisoComunidad, ...current]);
       }
-
-      // Agregar el nuevo aviso inmediatamente al estado local
-      if (data && data[0]) {
-        setAvisos((prev) => [data[0], ...prev]);
-      }
-    } catch (error) {
-      logger.error("Error:", error);
-      setNuevoMensaje(mensajeOriginal);
-      setImageFile(fileOriginal ?? null);
-      if (fileOriginal) {
-        setImagePreview(await fileToDataUrl(fileOriginal));
-      }
+      setNuevoMensaje("");
+      clearImage();
+    } catch {
+      setError("No se pudo enviar el reporte. Conservamos tu texto para reintentar.");
     } finally {
       setEnviando(false);
     }
   };
 
-  const calcularTiempoTranscurrido = (fechaISO: string) => {
-    const ahora = new Date();
-    const fecha = new Date(fechaISO);
-    const diferencia = ahora.getTime() - fecha.getTime();
-    const minutos = Math.floor(diferencia / (1000 * 60));
-    const horas = Math.floor(minutos / 60);
-    const dias = Math.floor(horas / 24);
-
-    if (dias > 0) return `Hace ${dias}d`;
-    if (horas > 0) return `Hace ${horas}h`;
-    return `Hace ${minutos}m`;
-  };
-
-  const getTipoMensaje = (mensaje: string) => {
-    const mensajeLower = mensaje.toLowerCase();
-    if (
-      mensajeLower.includes("peligro") ||
-      mensajeLower.includes("emergencia") ||
-      mensajeLower.includes("evacuación")
-    ) {
-      return "warning";
-    }
-    if (
-      mensajeLower.includes("seguro") ||
-      mensajeLower.includes("tranquilo") ||
-      mensajeLower.includes("bien")
-    ) {
-      return "safe";
-    }
-    return "info";
-  };
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-semibold text-white flex items-center">
-          <Users className="h-6 w-6 mr-2 text-blue-500" />
-          Conexión Comunitaria
-        </h3>
-        <Badge
-          variant="outline"
-          className="border-blue-800 text-blue-400 bg-blue-900/20"
-        >
-          <MessageCircle className="h-3 w-3 mr-1" />
-          {avisos.length} mensajes
+    <section className="space-y-6" aria-labelledby="community-title">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <p className="font-mono text-xs uppercase tracking-[0.18em] text-primary">Capa comunitaria</p>
+          <h2 id="community-title" className="mt-1 flex items-center gap-2 font-display text-2xl font-semibold tracking-tight">
+            Reportes del territorio
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">Información vecinal contextualizada. No reemplaza una alerta oficial.</p>
+        </div>
+        <Badge variant="outline" className="w-fit gap-1.5 border-border/80 bg-card/70 text-muted-foreground">
+          <MessageSquareText className="size-3.5" aria-hidden="true" /> {avisos.length} reportes
         </Badge>
       </div>
 
-      {/* Formulario para nuevo aviso */}
-      <Card className="bg-gray-900 border-gray-800">
-        <CardHeader>
-          <CardTitle className="text-white text-lg">
-            Compartir información
-          </CardTitle>
+      <Card className="border-border/80 bg-card/70">
+        <CardHeader className="p-5 pb-3 sm:p-6 sm:pb-3">
+          <CardTitle className="font-display text-lg">Comparte una observación</CardTitle>
+          <CardDescription>Describe hechos concretos: lugar, hora y qué observaste.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {APP_CONFIG.demoReadOnly && (
-            <div className="rounded-md border border-yellow-700 bg-yellow-900/20 p-3 text-sm text-yellow-200">
-              Modo demo: el foro está en solo lectura.
-            </div>
-          )}
-
+        <CardContent className="space-y-4 p-5 pt-2 sm:p-6 sm:pt-2">
+          {APP_CONFIG.demoMode ? <p className="rounded-lg border border-primary/20 bg-primary/[0.06] p-3 text-xs leading-5 text-muted-foreground"><strong className="text-foreground">Simulación demo:</strong> tus reportes se guardan solo en memoria mientras esta pestaña está abierta.</p> : null}
+          {APP_CONFIG.demoReadOnly ? <p className="rounded-lg border border-yellow-300/30 bg-yellow-300/10 p-3 text-xs text-yellow-100">Modo demo solo lectura activado.</p> : null}
           <Textarea
-            placeholder={
-              isSupabaseConfigured()
-                ? "¿Cómo está la situación en tu sector? Comparte información útil para la comunidad..."
-                : "Configuración de base de datos requerida para enviar mensajes..."
-            }
+            placeholder="Ej.: Ruta despejada en Pucón centro, 10:30."
             value={nuevoMensaje}
-            onChange={(e) => setNuevoMensaje(e.target.value)}
-            className="bg-gray-800 border-gray-700 text-white placeholder-gray-500 min-h-[100px] text-base"
-            maxLength={500}
-            disabled={!isSupabaseConfigured() || APP_CONFIG.demoReadOnly}
+            maxLength={MAX_MESSAGE_CHARS}
+            onChange={(event) => {
+              setNuevoMensaje(event.target.value);
+              setError("");
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void enviarAviso();
+              }
+            }}
+            className="min-h-28 resize-y bg-background/60"
+            disabled={enviando || APP_CONFIG.demoReadOnly}
+            aria-label="Texto del reporte comunitario"
           />
+
           {imagePreview ? (
             <div className="relative w-fit">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imagePreview} alt="Vista previa" className="max-h-44 rounded-md border border-gray-700" />
-              <button
-                type="button"
-                className="absolute -top-2 -right-2 bg-black/80 text-white rounded-full p-1"
-                onClick={() => {
-                  setImageFile(null);
-                  setImagePreview(null);
-                }}
-              >
-                <X className="h-3 w-3" />
+              <img src={imagePreview} alt="Vista previa del reporte" className="max-h-44 rounded-lg border border-border object-contain" />
+              <button type="button" onClick={clearImage} aria-label="Quitar imagen" className="absolute -right-3 -top-3 flex size-8 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-lg hover:bg-muted">
+                <X className="size-4" aria-hidden="true" />
               </button>
             </div>
           ) : null}
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <label className="cursor-pointer inline-flex items-center justify-center h-9 w-9 rounded-md border border-gray-700 bg-gray-800 text-gray-300 hover:bg-gray-700">
-                <ImagePlus className="h-4 w-4" />
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={!isSupabaseConfigured() || APP_CONFIG.demoReadOnly || enviando}
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    if (!isImageFile(file)) return;
-                    setImageFile(file);
-                    setImagePreview(await fileToDataUrl(file));
-                  }}
-                />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-border bg-background/60 px-3 text-sm text-muted-foreground hover:bg-muted has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring">
+                <ImagePlus className="size-4" aria-hidden="true" /> Adjuntar
+                <input type="file" accept="image/*" className="sr-only" disabled={enviando || APP_CONFIG.demoReadOnly} onChange={(event) => { void handleImage(event.target.files?.[0]); event.currentTarget.value = ""; }} />
               </label>
-              <span className="text-gray-500 text-sm">{nuevoMensaje.length}/500 caracteres</span>
+              <span className="font-mono text-xs text-muted-foreground">{nuevoMensaje.length}/{MAX_MESSAGE_CHARS}</span>
             </div>
-            <Button
-              onClick={enviarAviso}
-              disabled={
-                (!nuevoMensaje.trim() && !imageFile) ||
-                enviando ||
-                !isSupabaseConfigured() ||
-                APP_CONFIG.demoReadOnly
-              }
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 disabled:bg-gray-600 disabled:cursor-not-allowed"
-            >
-              {enviando ? (
-                <div className="flex items-center space-x-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Enviando...</span>
-                </div>
-              ) : (
-                <div className="flex items-center space-x-2">
-                  <Send className="h-4 w-4" />
-                  <span>Enviar</span>
-                </div>
-              )}
+            <Button type="button" onClick={() => void enviarAviso()} disabled={enviando || APP_CONFIG.demoReadOnly || (!nuevoMensaje.trim() && !imageFile)} className="min-h-11 sm:w-auto">
+              <Send aria-hidden="true" /> {enviando ? "Publicando…" : "Publicar reporte"}
             </Button>
           </div>
+          {error ? <p role="alert" className="text-sm leading-6 text-red-200">{error}</p> : null}
         </CardContent>
       </Card>
 
-      {/* Lista de avisos */}
-      <div className="space-y-4">
-        {!isSupabaseConfigured() && !APP_CONFIG.demoMode ? (
-          <div className="text-center py-8">
-            <MessageCircle className="h-12 w-12 text-red-500 mx-auto mb-2" />
-            <p className="text-red-400">Error de configuración</p>
-            <p className="text-gray-500 text-sm">
-              Supabase no está configurado correctamente
-            </p>
-          </div>
-        ) : loading ? (
-          <div className="text-center py-8">
-            <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-            <p className="text-gray-400">Cargando mensajes...</p>
-          </div>
-        ) : avisos.length === 0 ? (
-          <div className="text-center py-8">
-            <MessageCircle className="h-12 w-12 text-gray-600 mx-auto mb-2" />
-            <p className="text-gray-400">No hay mensajes aún</p>
-            <p className="text-gray-500 text-sm">
-              Sé el primero en compartir información
-            </p>
-          </div>
-        ) : (
-          avisos.map((aviso) => {
-            const { text, imageUrl } = parseMessageMedia(aviso.mensaje);
-            const tipoMensaje = getTipoMensaje(text || aviso.mensaje);
-            return (
-              <Card key={aviso.id} className="bg-gray-900 border-gray-800">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gray-700 rounded-full flex items-center justify-center">
-                        <span className="text-white font-medium text-sm">
-                          {aviso.usuarios?.nombre?.charAt(0) || "U"}
-                        </span>
-                      </div>
-                      <div>
-                        <h4 className="text-white font-medium">
-                          {aviso.usuarios?.nombre || "Usuario"}
-                        </h4>
-                        <div className="flex items-center space-x-2 text-xs text-gray-500">
-                          <Clock className="h-3 w-3" />
-                          <span>
-                            {calcularTiempoTranscurrido(aviso.fecha_creacion)}
-                          </span>
-                        </div>
-                      </div>
+      <div className="space-y-3">
+        {loading ? <div className="rounded-xl border border-border/70 bg-card/50 p-8 text-center text-sm text-muted-foreground">Cargando reportes…</div> : null}
+        {!loading && !isSupabaseConfigured() && !APP_CONFIG.demoMode ? <div className="rounded-xl border border-yellow-300/25 bg-yellow-300/[0.06] p-6 text-center text-sm text-yellow-100">Configura Supabase para habilitar la comunidad persistente.</div> : null}
+        {!loading && avisos.length === 0 ? <div className="rounded-xl border border-dashed border-border bg-card/40 p-10 text-center"><MessageSquareText className="mx-auto size-8 text-muted-foreground" aria-hidden="true" /><p className="mt-3 font-display font-semibold">Aún no hay reportes</p><p className="mt-1 text-sm text-muted-foreground">Comparte la primera observación útil para tu sector.</p></div> : null}
+        {!loading && avisos.map((aviso) => {
+          const { text, imageUrl } = parseMessageMedia(aviso.mensaje);
+          const author = aviso.autor_nombre || aviso.usuarios?.nombre || "Vecino";
+          return (
+            <Card key={aviso.id} className="border-border/80 bg-card/60">
+              <CardContent className="p-5 sm:p-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 font-display font-semibold text-primary">{author.charAt(0).toUpperCase()}</div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{author}</p>
+                      <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground"><Clock3 className="size-3" aria-hidden="true" /> {formatFreshness(aviso.fecha_creacion)}</p>
                     </div>
-                    <Badge
-                      variant="outline"
-                      className={
-                        tipoMensaje === "warning"
-                          ? "border-yellow-800 text-yellow-400 bg-yellow-950"
-                          : tipoMensaje === "safe"
-                          ? "border-green-800 text-green-400 bg-green-950"
-                          : "border-blue-800 text-blue-400 bg-blue-950"
-                      }
-                    >
-                      {tipoMensaje === "warning"
-                        ? "Alerta"
-                        : tipoMensaje === "safe"
-                        ? "Seguro"
-                        : "Info"}
-                    </Badge>
                   </div>
-                  {text ? (
-                    <p className="text-gray-300 leading-relaxed">{text}</p>
-                  ) : null}
-                  {imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={imageUrl}
-                      alt="Imagen comunitaria"
-                      className="mt-3 rounded-md border border-gray-700 max-h-72 w-auto"
-                    />
-                  ) : null}
-                </CardContent>
-              </Card>
-            );
-          })
-        )}
+                  <Badge variant="outline" className="shrink-0 gap-1 border-border/80 text-xs text-muted-foreground"><ShieldCheck className="size-3" aria-hidden="true" /> Comunitario</Badge>
+                </div>
+                {text ? <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-foreground/85">{text}</p> : null}
+                {imageUrl ? <div className="mt-4 overflow-hidden rounded-lg border border-border bg-background/50"><img src={imageUrl} alt={`Imagen compartida por ${author}`} className="max-h-80 w-auto object-contain" /></div> : null}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
-    </div>
+    </section>
   );
 }

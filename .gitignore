@@ -9,6 +9,7 @@
 
 # production
 /build
+/coverage/
 
 # debug
 npm-debug.log*
@@ -19,7 +20,8 @@ pnpm-debug.log*
 
 # env files
 .env
-.env.local
+.env.*
+!.env.example
 
 # vercel
 .vercel
@@ -34,4 +36,8 @@ Thumbs.db
 
 # Package managers
 package-lock.json
-pnpm-lock.yaml
+yarn.lock
+
+# codegraph index
+.codegraph/
+.atl/

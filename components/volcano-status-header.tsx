@@ -1,185 +1,105 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  AlertTriangle,
-  Activity,
-  TrendingUp,
-  Shield,
-  Clock,
-} from "lucide-react";
+import { AlertCircle, Clock3, Database, Radio } from "lucide-react";
+import { AlertLevelBadge } from "@/components/alert-level-badge";
 import { Badge } from "@/components/ui/badge";
-import { supabase, type AlertaVolcan } from "@/lib/supabase";
+import { Card } from "@/components/ui/card";
+import { useAlert } from "@/contexts/alert-context";
 import { APP_CONFIG } from "@/lib/app-config";
-import { DEMO_ALERTA } from "@/lib/demo-data";
-import { logger } from "@/lib/logger";
-
-const getNivelConfig = (nivel: string) => {
-  switch (nivel) {
-    case "verde":
-      return {
-        color: "bg-green-600",
-        textColor: "text-white",
-        bgGradient: "from-green-900/30 to-green-900/10",
-        icon: Shield,
-        label: "NORMAL",
-      };
-    case "amarillo":
-      return {
-        color: "bg-yellow-600",
-        textColor: "text-white",
-        bgGradient: "from-yellow-900/30 to-yellow-900/10",
-        icon: Activity,
-        label: "PRECAUCIÓN",
-      };
-    case "naranja":
-      return {
-        color: "bg-orange-600",
-        textColor: "text-white",
-        bgGradient: "from-orange-900/30 to-orange-900/10",
-        icon: TrendingUp,
-        label: "ALERTA",
-      };
-    case "rojo":
-      return {
-        color: "bg-red-600",
-        textColor: "text-white",
-        bgGradient: "from-red-900/30 to-red-900/10",
-        icon: AlertTriangle,
-        label: "EMERGENCIA",
-      };
-    default:
-      return {
-        color: "bg-gray-600",
-        textColor: "text-white",
-        bgGradient: "from-gray-900/30 to-gray-900/10",
-        icon: Activity,
-        label: "DESCONOCIDO",
-      };
-  }
-};
-
-const calcularTiempoTranscurrido = (fechaISO: string) => {
-  const ahora = new Date();
-  const fecha = new Date(fechaISO);
-  const diferencia = ahora.getTime() - fecha.getTime();
-  const horas = Math.floor(diferencia / (1000 * 60 * 60));
-  const minutos = Math.floor((diferencia % (1000 * 60 * 60)) / (1000 * 60));
-
-  if (horas > 0) {
-    return `Hace ${horas}h ${minutos}m`;
-  }
-  return `Hace ${minutos}m`;
-};
+import { formatFreshness, formatLocalDateTime, isStale } from "@/lib/date-utils";
+import { getAlertLevelConfig } from "@/lib/alert-levels";
 
 export default function VolcanoStatusHeader() {
-  const [alerta, setAlerta] = useState<AlertaVolcan | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { alerta, loading, hasError } = useAlert();
+  const [, setClock] = useState(0);
 
   useEffect(() => {
-    const cargarAlerta = async () => {
-      if (APP_CONFIG.demoMode) {
-        setAlerta(DEMO_ALERTA);
-        setLoading(false);
-        return;
-      }
-
-      if (!supabase) {
-        logger.error("❌ Supabase no está configurado");
-        setLoading(false);
-        return;
-      }
-
-      try {
-        const { data, error } = await supabase
-          .from("alertas_volcan")
-          .select("*")
-          .order("ultima_actualizacion", { ascending: false })
-          .limit(1)
-          .single();
-
-        if (error) {
-          logger.error("Error cargando alerta:", error);
-          return;
-        }
-
-        setAlerta(data);
-      } catch (error) {
-        logger.error("Error:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    cargarAlerta();
-
-    // Suscribirse a cambios en tiempo real solo fuera de demo y con supabase disponible
-    if (APP_CONFIG.demoMode || !supabase) return;
-
-    const subscription = supabase
-      .channel("alertas_volcan_changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "alertas_volcan" },
-        () => {
-          cargarAlerta();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
+    const freshnessTimer = window.setInterval(() => setClock((value) => value + 1), 60_000);
+    return () => window.clearInterval(freshnessTimer);
   }, []);
 
   if (loading) {
     return (
-      <div className="bg-gray-900 border-b border-gray-800 animate-pulse">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="h-16 bg-gray-800 rounded-lg"></div>
+      <section className="border-y border-border/70 bg-card/70" aria-label="Cargando estado del volcán">
+        <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+          <div className="h-36 animate-shimmer rounded-xl bg-muted/60" />
         </div>
-      </div>
+      </section>
     );
   }
 
-  if (!alerta) return null;
+  if (!alerta || hasError) {
+    return (
+      <section className="border-y border-border/70 bg-card/70" aria-live="polite">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
+          <AlertCircle className="size-5 text-yellow-300" aria-hidden="true" />
+          <span>No pudimos actualizar el estado. Revisa los canales oficiales antes de actuar.</span>
+        </div>
+      </section>
+    );
+  }
 
-  const config = getNivelConfig(alerta.nivel_alerta);
-  const IconComponent = config.icon;
+  const config = getAlertLevelConfig(alerta.nivel_alerta);
+  const LevelIcon = config.icon;
+  const stale = isStale(alerta.ultima_actualizacion);
+  const isSimulation = APP_CONFIG.demoMode || alerta.es_simulacion === true;
+  const volcanoName = alerta.informacion_volcan?.nombre || APP_CONFIG.defaultVolcanoName || "Villarrica";
 
   return (
-    <div
-      className={`border-b border-gray-800 bg-gradient-to-r ${config.bgGradient}`}
+    <section
+      className={`border-y border-border/70 ${config.panelClass}`}
+      aria-live="polite"
+      aria-label={`Estado del ${volcanoName}: ${config.label}`}
     >
-      <div className="max-w-7xl mx-auto px-4 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className={`p-3 rounded-full ${config.color}`}>
-              <IconComponent className={`h-6 w-6 ${config.textColor}`} />
-            </div>
-            <div>
-              <div className="flex items-center space-x-3 mb-1">
-                <h2 className="text-xl font-semibold text-white">
-                  Volcán Villarrica
-                </h2>
-                <Badge
-                  className={`${config.color} ${config.textColor} font-medium`}
-                >
-                  {config.label}
-                </Badge>
-              </div>
-              <p className="text-gray-300 text-sm mb-1">{alerta.descripcion}</p>
-              <div className="flex items-center space-x-2 text-xs text-gray-400">
-                <Clock className="h-3 w-3" />
-                <span>
-                  Actualizado{" "}
-                  {calcularTiempoTranscurrido(alerta.ultima_actualizacion)}
-                </span>
-              </div>
-            </div>
+      <div className="mx-auto grid max-w-7xl gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[1fr_auto] lg:items-center lg:px-8 lg:py-6">
+        <div className="min-w-0">
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-[0.68rem] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+            <Radio className="size-3.5 text-emerald-300" aria-hidden="true" />
+            <span>Estado operativo</span>
+            <span className="text-border">/</span>
+            <span>Monitoreo técnico</span>
+            {isSimulation ? (
+              <Badge variant="outline" className="border-primary/40 bg-primary/10 text-primary">
+                {APP_CONFIG.demoMode ? "Simulación demo" : "Simulación de instalación"}
+              </Badge>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              Volcán {volcanoName}
+            </h2>
+            <AlertLevelBadge level={alerta.nivel_alerta} />
+          </div>
+
+          <p className="mt-2 max-w-3xl text-base leading-7 text-foreground/85">
+            {alerta.descripcion || config.description}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <Clock3 className="size-3.5" aria-hidden="true" />
+              {formatFreshness(alerta.ultima_actualizacion)} · {formatLocalDateTime(alerta.ultima_actualizacion)} hora Chile
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <Database className="size-3.5" aria-hidden="true" />
+              Fuente: {alerta.fuente || "Fuente no declarada"}
+            </span>
+            {alerta.referencia ? <span>Referencia: {alerta.referencia}</span> : null}
+            {stale ? <span className="text-yellow-200">Información posiblemente desactualizada</span> : null}
           </div>
         </div>
+
+        <Card className="border-border/70 bg-background/40 p-4 lg:min-w-64">
+          <div className="flex items-start gap-3">
+            <LevelIcon className={`mt-0.5 size-5 ${config.iconClass}`} aria-hidden="true" />
+            <div>
+              <p className="text-xs font-mono uppercase tracking-[0.14em] text-muted-foreground">Qué hacer ahora</p>
+              <p className="mt-1 text-sm leading-6 text-foreground">{config.action}</p>
+            </div>
+          </div>
+        </Card>
       </div>
-    </div>
+    </section>
   );
 }

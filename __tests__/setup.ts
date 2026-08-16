@@ -5,7 +5,7 @@
 
 import '@testing-library/jest-dom'
 
-process.env.NODE_ENV = 'test'
+vi.stubEnv('NODE_ENV', 'test')
 
 // Mock for Next.js router
 vi.mock('next/navigation', () => ({

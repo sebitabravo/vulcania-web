@@ -4,7 +4,9 @@
 
 ```bash
 pnpm lint
+pnpm typecheck
 pnpm test:run
+pnpm test:coverage
 pnpm build
 ```
 
@@ -12,13 +14,13 @@ pnpm build
 
 ```bash
 pnpm validate-env
-pnpm doctor
+pnpm run doctor
 pnpm outdated
 ```
 
 ## Incidentes rápidos
 
 1. `pnpm validate-env`
-2. `pnpm doctor`
+2. `pnpm run doctor`
 3. Revisar variables en Vercel/Supabase
 4. Re-ejecutar `scripts/init.sql` si hay errores de tabla/RLS

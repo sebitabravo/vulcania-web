@@ -4,156 +4,195 @@
 
 @layer base {
   :root {
-    --background: 0 0% 0%;
-    --foreground: 0 0% 100%;
-    --card: 0 0% 0%;
-    --card-foreground: 0 0% 100%;
-    --popover: 0 0% 0%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 0 0% 0%;
+    --background: 210 33% 98%;
+    --foreground: 216 28% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 216 28% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 216 28% 12%;
+    --primary: 204 82% 40%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 10%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 0 0% 15%;
-    --muted-foreground: 0 0% 70%;
-    --accent: 0 100% 50%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 100% 50%;
+    --secondary: 210 25% 93%;
+    --secondary-foreground: 216 28% 16%;
+    --muted: 210 25% 93%;
+    --muted-foreground: 215 14% 42%;
+    --accent: 204 45% 92%;
+    --accent-foreground: 204 82% 30%;
+    --destructive: 0 72% 48%;
     --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 30%;
-    --input: 0 0% 20%;
-    --ring: 0 100% 50%;
-    --radius: 0.5rem;
+    --border: 214 22% 85%;
+    --input: 214 22% 82%;
+    --ring: 204 82% 40%;
+    --radius: 0.65rem;
   }
-}
 
-@layer base {
+  .dark {
+    --background: 216 27% 7%;
+    --foreground: 210 24% 94%;
+    --card: 215 25% 10%;
+    --card-foreground: 210 24% 94%;
+    --popover: 215 25% 10%;
+    --popover-foreground: 210 24% 94%;
+    --primary: 198 88% 56%;
+    --primary-foreground: 216 28% 10%;
+    --secondary: 215 20% 15%;
+    --secondary-foreground: 210 24% 94%;
+    --muted: 215 20% 15%;
+    --muted-foreground: 214 14% 66%;
+    --accent: 202 35% 18%;
+    --accent-foreground: 198 88% 70%;
+    --destructive: 0 76% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 19% 20%;
+    --input: 215 19% 24%;
+    --ring: 198 88% 56%;
+  }
+
   * {
     @apply border-border;
   }
+
+  html {
+    min-width: 320px;
+    background: hsl(var(--background));
+  }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  }
+
+  button,
+  a,
+  input,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.3);
   }
 }
 
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
+.font-display {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Estilos personalizados para el mapa */
-.custom-div-icon {
-  background: transparent;
-  border: none;
+.font-body {
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Mejoras de accesibilidad */
-button:focus-visible,
-[role="button"]:focus-visible {
-  @apply ring-2 ring-offset-2 ring-red-500;
+.font-mono {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Estilos para mejorar la legibilidad */
-.leaflet-popup-content {
-  color: #1f2937 !important;
-  font-weight: 500;
+.status-stripes {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0,
+    transparent 10px,
+    rgba(255, 255, 255, 0.035) 10px,
+    rgba(255, 255, 255, 0.035) 20px
+  );
 }
 
-/* Fix z-index para que los modales aparezcan sobre el mapa */
-[data-radix-popper-content-wrapper] {
-  z-index: 9999 !important;
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
-[role="dialog"] {
-  z-index: 9999 !important;
+.animate-shimmer {
+  background-image: linear-gradient(110deg, hsl(var(--muted)) 20%, hsl(var(--card)) 35%, hsl(var(--muted)) 50%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
 }
 
 .leaflet-container {
-  z-index: 1 !important;
+  z-index: 0;
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+  background: #101820;
 }
 
-/* Overlay del modal */
-[data-radix-dialog-overlay] {
-  z-index: 9998 !important;
+.leaflet-control-zoom a,
+.leaflet-control-layers,
+.leaflet-bar a {
+  background: hsl(var(--card) / 0.92) !important;
+  color: hsl(var(--foreground)) !important;
+  border-color: hsl(var(--border)) !important;
 }
 
-/* Contenido del modal */
-[data-radix-dialog-content] {
-  z-index: 9999 !important;
+.leaflet-control-attribution {
+  background: hsl(var(--background) / 0.8) !important;
+  color: hsl(var(--muted-foreground)) !important;
 }
 
-/* Estilos para las etiquetas de ruta */
-.route-label {
+.leaflet-control-attribution a {
+  color: hsl(var(--primary)) !important;
+}
+
+.leaflet-control-zoom a:focus-visible,
+.leaflet-control-attribution a:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.vulcania-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
   background: transparent;
-  border: none;
-  font-weight: bold;
-  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
-  white-space: nowrap;
 }
 
-/* Estilos para las flechas de dirección */
-.arrow-icon {
-  background: transparent;
-  border: none;
+.vulcania-marker span {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border: 3px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.45);
 }
 
-/* Animación de pulso para la ubicación del usuario */
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+.vulcania-marker-volcano span {
+  transform: rotate(45deg);
+  border-radius: 5px;
+  background: #93c5fd;
+}
+
+.vulcania-marker-point span {
+  border-radius: 5px;
+  background: #4ade80;
+}
+
+.vulcania-marker-full span {
+  border-radius: 5px;
+  background: #ef4444;
+}
+
+.map-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+}
+
+.map-legend-volcano { transform: rotate(45deg); border-radius: 3px; background: #93c5fd; }
+.map-legend-point { border-radius: 3px; background: #4ade80; }
+.map-legend-full { border-radius: 3px; background: #ef4444; }
+.map-legend-zone { width: 18px; height: 10px; border: 1px dashed #f97316; border-radius: 999px; background: rgba(249, 115, 22, 0.12); }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
-  70% {
-    box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-  }
-}
 
-.user-location-icon {
-  background: transparent;
-  border: none;
-}
-
-/* Animación de bounce para el indicador de scroll */
-@keyframes bounce {
-  0%,
-  20%,
-  53%,
-  80%,
-  100% {
-    transform: translate3d(0, 0, 0);
+  .animate-shimmer {
+    animation: none;
+    background-image: none;
   }
-  40%,
-  43% {
-    transform: translate3d(0, -30px, 0);
-  }
-  70% {
-    transform: translate3d(0, -15px, 0);
-  }
-  90% {
-    transform: translate3d(0, -4px, 0);
-  }
-}
-
-.animate-bounce {
-  animation: bounce 2s infinite;
-}
-
-/* Efectos de hover suaves */
-.hover-lift {
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-}
-
-.hover-lift:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(239, 68, 68, 0.2);
-}
-
-/* Gradiente de texto */
-.text-gradient {
-  background: linear-gradient(135deg, #ef4444, #f97316);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }

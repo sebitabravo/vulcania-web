@@ -1,8 +1,10 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env tsx
+
+import { resolveDemoMode } from '../lib/app-config';
 
 /**
  * Script para validar variables de entorno (modo demo u modo completo con Supabase)
- * Uso: npm run validate-env
+ * Uso: pnpm run validate-env
  */
 
 interface EnvVariable {
@@ -53,13 +55,7 @@ function validateEnvironment() {
 
   let hasErrors = false;
   let hasWarnings = false;
-  const hasSupabaseConfig = Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  );
-  const demoModeSetting = process.env.NEXT_PUBLIC_DEMO_MODE;
-  const demoMode = demoModeSetting
-    ? demoModeSetting.toLowerCase() === 'true'
-    : !hasSupabaseConfig;
+  const demoMode = resolveDemoMode();
 
   console.log(`🧭 Modo detectado: ${demoMode ? 'DEMO OFFLINE' : 'MODO COMPLETO (con Supabase)'}`);
   console.log('');
@@ -73,9 +69,7 @@ function validateEnvironment() {
     console.log(`   ${description}`);
 
     if (value) {
-      console.log(`   Valor: ${name.includes('KEY') || name.includes('SECRET')
-        ? value.substring(0, 20) + '...'
-        : value}`);
+      console.log('   Configurada (valor omitido por seguridad)');
     } else {
       if (required) {
         console.log('   ❌ FALTANTE - Esta variable es OBLIGATORIA');
@@ -140,7 +134,6 @@ function showVercelInstructions() {
 }
 
 if (require.main === module) {
-  console.clear();
   validateEnvironment();
 
   if (process.argv.includes('--vercel-help')) {

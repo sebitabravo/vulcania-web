@@ -1,211 +1,107 @@
-# 🧪 Guía de Testing - Vulcania Web
+# Testing — Vulcania Web
 
-Este documento describe cómo ejecutar y escribir tests para la aplicación Vulcania.
+La suite usa Vitest, Testing Library y `jsdom`. El proyecto no declara un
+runner E2E autenticado: ese gate requiere un proyecto Supabase de prueba y
+credenciales entregadas explícitamente.
 
-## 📦 Instalación
+## Instalación y gates
 
 ```bash
-# Instalar dependencias de testing
 pnpm install
-
-# Las siguientes dependencias fueron agregadas:
-# - vitest (framework de tests)
-# - @testing-library/react (tests de componentes)
-# - @testing-library/jest-dom (matchers de DOM)
-# - @testing-library/user-event (simulación de interacciones)
-# - jsdom (entorno de tests)
-# - @vitest/coverage-v8 (cobertura de código)
-# - @vitest/ui (UI de tests)
+pnpm lint
+pnpm typecheck
+pnpm test:run
+pnpm test:coverage
+pnpm build
+git diff --check
 ```
 
-## 🚀 Comandos Disponibles
+Para una ejecución rápida durante desarrollo:
 
 ```bash
-# Ejecutar tests en modo watch (desarrollo)
 pnpm test
+```
 
-# Ejecutar tests una vez (CI/CD)
-pnpm test:run
+Para cobertura:
 
-# Ejecutar tests con reporte de cobertura
+```bash
 pnpm test:coverage
-
-# Abrir UI de tests (visual)
-pnpm test:ui
 ```
 
-## 📁 Estructura de Tests
+La cobertura usa V8, excluye `.next/`, `coverage/`, scripts y tests, y exige
+como baseline 30% de statements/lines, 60% de branches y 70% de functions.
+Es un piso de regresión, no evidencia de cobertura E2E.
 
-```
-vulcania-web/
-├── __tests__/
-│   ├── setup.ts              # Configuración global
-│   ├── utils.test.ts         # Tests para lib/utils.ts
-│   ├── app-config.test.ts    # Tests para configuración
-│   ├── auth-utils.test.ts    # Tests para auth helpers
-│   ├── auth-context.test.tsx # Tests para AuthContext
-│   ├── login-screen.test.tsx # Tests para LoginScreen
-│   ├── button.test.tsx       # Tests para componentes UI
-│   └── *.test.ts(x)          # Nuevos tests
-├── vitest.config.ts          # Configuración de Vitest
-├── TESTING.md                # Esta documentación
-└── package.json
-```
+## Suite actual
 
-## ✍️ Escribiendo Tests
-
-### Test Unitario (Utilidades)
-
-```typescript
-// __tests__/utils.test.ts
-import { describe, it, expect } from 'vitest'
-import { cn } from '@/lib/utils'
-
-describe('cn() utility', () => {
-  it('should merge tailwind classes', () => {
-    expect(cn('px-2', 'px-4')).toBe('px-4')
-  })
-})
+```text
+__tests__/
+├── setup.ts                # matchers, mocks mínimos y variables de test
+├── app-config.test.ts      # defaults y flags de configuración
+├── alert-levels.test.ts    # escala, iconos y fail-closed
+├── auth-context.test.tsx   # contratos de auth/configuración
+├── auth-full-mode.test.tsx # OTP full-mode con Supabase mockeado
+├── auth-utils.test.ts      # helpers de teléfono importados desde lib/
+├── button.test.tsx         # primitiva UI
+├── login-screen.test.tsx   # render, accesibilidad y formato de teléfono
+├── emergency-modal.test.tsx # modal única, contactos y acknowledgement
+├── date-utils.test.ts      # frescura, stale y formatos locales
+├── demo-data.test.ts       # alerta y stores demo entre pestañas
+├── community-chat.test.tsx # publicación demo y envío con Enter
+├── message-media.test.ts   # límite y parseo seguro de imágenes
+├── phone-utils.test.ts     # validación canónica +569XXXXXXXX
+├── schema-contract.test.ts  # RLS, policies, Realtime y guardas SQL
+└── utils.test.ts           # cn y utilidades base
 ```
 
-### Test de Componente
+Los tests de componente deben preferir roles, labels y texto semántico. Evita
+selectores ligados a clases Tailwind o a una copia local de la lógica de
+producción.
 
-```typescript
-// __tests__/button.test.tsx
-import { render, screen } from '@testing-library/react'
-import { Button } from '@/components/ui/button'
+## Demo y Supabase
 
-describe('Button', () => {
-  it('should render with text', () => {
-    render(<Button>Click</Button>)
-    expect(screen.getByText('Click')).toBeInTheDocument()
-  })
-})
+El smoke de Realtime distingue los dos modos:
+
+```bash
+NEXT_PUBLIC_DEMO_MODE=true pnpm test-realtime
 ```
 
-### Test de Componente Complejo (LoginScreen)
+En demo el comando termina explícitamente como omitido. En modo completo
+requiere `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY`, se
+suscribe a `alertas_volcan` y falla si Supabase no confirma la suscripción en
+8 segundos.
 
-```typescript
-// __tests__/login-screen.test.tsx
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import LoginScreen from '@/components/login-screen'
+El diagnóstico seguro del esquema usa:
 
-describe('LoginScreen', () => {
-  it('should format phone number as user types', async () => {
-    render(<LoginScreen />)
-    const user = userEvent.setup()
-    const phoneInput = screen.getByPlaceholderText('+56 9 1234 5678')
-    
-    await user.type(phoneInput, '12345678')
-    expect(phoneInput).toHaveValue('+56 9 1234 5678')
-  })
-
-  it('should call login on submit', async () => {
-    render(<LoginScreen />)
-    const user = userEvent.setup()
-    
-    await user.type(screen.getByPlaceholderText('+56 9 1234 5678'), '12345678')
-    await user.click(screen.getByText('Enviar código SMS'))
-    
-    await waitFor(() => {
-      expect(mockLogin).toHaveBeenCalledWith('+56 9 1234 5678')
-    })
-  })
-})
+```bash
+NEXT_PUBLIC_DEMO_MODE=true pnpm run doctor
+# o, en full mode, agrega las variables Supabase sin imprimirlas
+pnpm run doctor
 ```
 
-### Test de Integración (Auth)
+`doctor` no imprime claves. Las lecturas protegidas sin service role que
+devuelven RLS se reportan como protección esperada; para revisar todas las
+entidades usa un service role solo en el entorno administrativo adecuado.
 
-```typescript
-// __tests__/auth.test.tsx
-import { renderHook, act } from '@testing-library/react'
-import { useAuth } from '@/contexts/auth-context'
+El workflow de GitHub ejecuta install frozen, lint, typecheck, tests, coverage y
+build en Node 22/pnpm 10.10.0.
 
-describe('useAuth', () => {
-  it('should login with valid phone', async () => {
-    const { result } = renderHook(() => useAuth())
-    await act(async () => {
-      const success = await result.current.login('+56912345678')
-      expect(success).toBe(true)
-    })
-  })
-})
-```
+## Reglas para cambios
 
-## 🎯 Mejores Prácticas
+1. Un bug o cambio de comportamiento necesita una regresión en `__tests__/`
+   cuando exista un camino razonable.
+2. Para inputs de teléfono usa `lib/phone-utils.ts`; el formato válido es
+   `+569` seguido de exactamente ocho dígitos.
+3. Para niveles usa `lib/alert-levels.ts`; no dupliques colores o labels.
+4. Para imágenes usa `validateImageFile` y el límite de 2 MB.
+5. Para teclado usa `onKeyDown` con guard de composición IME; `Enter` publica
+   y `Shift+Enter` conserva saltos de línea cuando corresponde.
+6. No uses `alert()`/`confirm()` nativos, `Math.random()` para datos operativos,
+   HTML interpolado con datos de usuario ni logs con PII.
 
-1. **Nombres descriptivos**: `it('should return false for invalid phone')`
-2. **AAA Pattern**: Arrange, Act, Assert
-3. **Tests aislados**: Cada test debe ser independiente
-4. **Mocks explícitos**: Mockear solo lo necesario
-5. **Cobertura útil**: Enfocarse en lógica crítica, no 100% ciego
+## Límites conocidos
 
-## 🔧 Configuración
-
-### vitest.config.ts
-
-```typescript
-import { defineConfig } from 'vitest/config'
-
-export default defineConfig({
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: ['./__tests__/setup.ts'],
-  },
-})
-```
-
-### setup.ts
-
-Configura mocks globales:
-- Next.js router
-- Supabase client
-- Auth context
-- Console warnings
-
-## 📊 Cobertura de Código
-
-El reporte de cobertura se genera en:
-- `coverage/index.html` (reporte HTML interactivo)
-- `coverage/coverage-final.json` (datos JSON)
-
-**Archivos excluidos:**
-- `node_modules/`
-- `__tests__/`
-- `scripts/`
-- `**/*.d.ts`
-- `**/*.config.*`
-
-## 🐛 Troubleshooting
-
-### "Cannot find module"
-
-Verifica que el alias `@` esté configurado en `vitest.config.ts`:
-
-```typescript
-resolve: {
-  alias: {
-    '@': path.resolve(__dirname, './'),
-  },
-}
-```
-
-### "window is not defined"
-
-Asegúrate de tener `environment: 'jsdom'` en la configuración.
-
-### Tests fallan en CI
-
-Ejecuta localmente con `pnpm test:run` (mismo modo que CI).
-
-## 📚 Recursos
-
-- [Vitest Docs](https://vitest.dev)
-- [Testing Library](https://testing-library.com)
-- [React Testing Examples](https://kentcdodds.com/blog/common-mistakes-with-react-testing)
-
----
-
-*Última actualización: 2026-02-28*
+- No hay E2E autenticado contra un proyecto Supabase real en este checkout.
+- La demo no prueba RLS, OTP, RPCs ni entrega externa de SMS.
+- La imagen comunitaria usa data URL temporal; Storage es el siguiente paso
+  para un despliegue real.

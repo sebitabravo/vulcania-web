@@ -95,12 +95,14 @@ async function main() {
 
   for (const table of tables) {
     const client = adminClient || anonClient;
-    const { error } = await client.from(table).select("*", { head: true, count: "exact" }).limit(1);
+    const { error } = await client.from(table).select("id").limit(1);
     if (!error) {
       console.log(`OK: ${table}`);
       continue;
     }
-    if (!adminClient && protectedTables.has(table) && /permission denied|row-level security|policy/i.test(error.message)) {
+    const errorStatus = (error as { status?: number }).status;
+    const protectedAccessError = errorStatus === 401 || errorStatus === 403 || error.code === "42501" || /permission denied|row-level security|policy/i.test(error.message || "");
+    if (!adminClient && protectedTables.has(table) && protectedAccessError) {
       console.log(`OK: ${table} existe y está protegido por RLS.`);
       continue;
     }

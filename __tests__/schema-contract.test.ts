@@ -37,5 +37,8 @@ describe("scripts/init.sql", () => {
     expect(doctor).toContain('client.rpc("verificar_publicaciones_realtime")');
     expect(doctor).toContain("Reejecuta scripts/init.sql");
     expect(doctor).toContain("realtimeTables");
+    expect(doctor).toContain('.from(table).select("id").limit(1)');
+    expect(doctor).toContain('const errorStatus = (error as { status?: number }).status');
+    expect(doctor).toContain('errorStatus === 401 || errorStatus === 403');
   });
 });

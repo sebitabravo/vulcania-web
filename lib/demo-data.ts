@@ -2,6 +2,7 @@ import type {
   AlertaVolcan,
   AvisoComunidad,
   MensajeChat,
+  InformacionVolcan,
   PuntoEncuentro,
   PublicProfile,
   Usuario,
@@ -18,6 +19,25 @@ export const DEMO_USUARIO: Usuario = {
   telefono: demoPhone,
   rol: "user",
   fecha_creacion: new Date().toISOString(),
+};
+
+export const DEMO_VOLCAN_INFO: InformacionVolcan = {
+  id: "demo-volcan",
+  nombre: "Villarrica",
+  codigo: "VIL",
+  altura_msnm: 2847,
+  latitud: -39.42,
+  longitud: -71.93,
+  descripcion: "Ficha histórica de referencia. Los parámetros de monitoreo en tiempo real no están disponibles en esta demo.",
+  tipo_volcan: "Estratovolcán",
+  laguna_lava: true,
+  erupciones_registradas: 152,
+  ultima_erupcion_vei: 3,
+  riesgos_principales: "Lava, lahares y caída de tefra.",
+  fuente: "Smithsonian Global Volcanism Program",
+  fuente_url: "https://volcano.si.edu/volcano.cfm?vn=357120",
+  ultima_verificacion: "2026-08-16T00:00:00Z",
+  activo: true,
 };
 
 export const DEMO_PROFILES: PublicProfile[] = [
@@ -52,7 +72,6 @@ export function createDemoAlert(now = new Date().toISOString(), level: AlertLeve
     referencia: "DEMO",
     es_simulacion: true,
     ultima_actualizacion: now,
-    parametros_id: "demo-parametros",
     volcan_id: "demo-volcan",
   };
 }
@@ -91,6 +110,10 @@ export const DEMO_PUNTOS_ENCUENTRO: PuntoEncuentro[] = [
     seguridad_nivel: 4,
     tiempo_aprox_pie: 20,
     ocupado: false,
+    fuente: "Datos demo históricos de Vulcania",
+    fuente_url: "https://www.senapred.cl/visor-preparado/",
+    documento: "Fuente oficial pendiente de confirmación",
+    trazabilidad: "por_confirmar",
   },
   {
     id: "punto-2",
@@ -102,6 +125,10 @@ export const DEMO_PUNTOS_ENCUENTRO: PuntoEncuentro[] = [
     seguridad_nivel: 3,
     tiempo_aprox_pie: 35,
     ocupado: false,
+    fuente: "Datos demo históricos de Vulcania",
+    fuente_url: "https://www.senapred.cl/visor-preparado/",
+    documento: "Fuente oficial pendiente de confirmación",
+    trazabilidad: "por_confirmar",
   },
   {
     id: "punto-3",
@@ -113,14 +140,18 @@ export const DEMO_PUNTOS_ENCUENTRO: PuntoEncuentro[] = [
     seguridad_nivel: 4,
     tiempo_aprox_pie: 45,
     ocupado: true,
+    fuente: "Datos demo históricos de Vulcania",
+    fuente_url: "https://www.senapred.cl/visor-preparado/",
+    documento: "Fuente oficial pendiente de confirmación",
+    trazabilidad: "por_confirmar",
   },
 ];
 
 export const DEMO_ZONAS_EXCLUSION: ZonaExclusion[] = [
-  { id: "zona-verde", nivel_alerta: "verde", radio_km: 3, descripcion: "Zona técnica referencial de 3 km." },
-  { id: "zona-amarilla", nivel_alerta: "amarillo", radio_km: 3, descripcion: "Zona técnica referencial de 3 km." },
-  { id: "zona-naranja", nivel_alerta: "naranja", radio_km: 8, descripcion: "Zona ampliada referencial de 8 km." },
-  { id: "zona-roja", nivel_alerta: "rojo", radio_km: 15, descripcion: "Zona crítica referencial de 15 km." },
+  { id: "zona-verde", nivel_alerta: "verde", radio_km: 3, descripcion: "Zona técnica referencial de 3 km.", fuente: "Visor Chile Preparado / pendiente de verificación", fuente_url: "https://www.senapred.cl/visor-preparado/", documento: "Plano oficial en actualización.", trazabilidad: "por_confirmar" },
+  { id: "zona-amarilla", nivel_alerta: "amarillo", radio_km: 3, descripcion: "Zona técnica referencial de 3 km.", fuente: "Visor Chile Preparado / pendiente de verificación", fuente_url: "https://www.senapred.cl/visor-preparado/", documento: "Plano oficial en actualización.", trazabilidad: "por_confirmar" },
+  { id: "zona-naranja", nivel_alerta: "naranja", radio_km: 8, descripcion: "Zona ampliada referencial de 8 km.", fuente: "Visor Chile Preparado / pendiente de verificación", fuente_url: "https://www.senapred.cl/visor-preparado/", documento: "Plano oficial en actualización.", trazabilidad: "por_confirmar" },
+  { id: "zona-roja", nivel_alerta: "rojo", radio_km: 15, descripcion: "Zona crítica referencial de 15 km.", fuente: "Visor Chile Preparado / pendiente de verificación", fuente_url: "https://www.senapred.cl/visor-preparado/", documento: "Plano oficial en actualización.", trazabilidad: "por_confirmar" },
 ];
 
 export function createDemoCommunity(now = Date.now()): AvisoComunidad[] {

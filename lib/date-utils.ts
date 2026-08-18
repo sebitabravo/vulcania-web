@@ -37,3 +37,15 @@ export function isStale(value: string, maxAgeMinutes = 30): boolean {
   const timestamp = new Date(value).getTime();
   return Number.isNaN(timestamp) || Date.now() - timestamp > maxAgeMinutes * 60_000;
 }
+
+export const OFFICIAL_VERIFICATION_MAX_AGE_DAYS = 7;
+
+export function isVerificationStale(
+  value: string | null | undefined,
+  now = Date.now(),
+  maxAgeDays = OFFICIAL_VERIFICATION_MAX_AGE_DAYS,
+): boolean {
+  if (!value) return true;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) || now - timestamp > maxAgeDays * 24 * 60 * 60_000;
+}

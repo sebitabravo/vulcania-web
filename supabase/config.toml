@@ -1,0 +1,13 @@
+[project]
+ref = "pbqlhzwligfhlktsiaux"
+
+[auth]
+enabled = true
+
+[auth.sms]
+enable_signup = true
+enable_confirmations = false
+max_frequency = "5s"
+
+[functions.vulcan-detect]
+verify_jwt = true

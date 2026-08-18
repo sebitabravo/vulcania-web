@@ -10,6 +10,7 @@ import {
 } from "react";
 import { APP_CONFIG } from "@/lib/app-config";
 import { DEMO_USUARIO } from "@/lib/demo-data";
+import { type LoginConsent } from "@/lib/legal";
 import { isValidChileanMobile, normalizePhoneSpaces } from "@/lib/phone-utils";
 import { supabase, type Usuario } from "@/lib/supabase";
 
@@ -18,7 +19,7 @@ interface AuthContextType {
   loading: boolean;
   pendingPhone: string | null;
   authError: string | null;
-  login: (telefono: string) => Promise<boolean>;
+  login: (telefono: string, consent?: LoginConsent) => Promise<boolean>;
   verifyOtp: (codigo: string) => Promise<boolean>;
   clearPendingOtp: () => void;
   logout: () => Promise<void>;
@@ -46,7 +47,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [loading, setLoading] = useState(true);
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
+  const [pendingConsent, setPendingConsent] = useState<LoginConsent | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  const persistConsents = useCallback(async (usuarioId: string, consent: LoginConsent): Promise<boolean> => {
+    if (!supabase) return false;
+    const rows = [
+      { usuario_id: usuarioId, tipo: "autenticacion", aceptado: consent.auth, version_terminos: consent.termsVersion, fecha_revocacion: null },
+      { usuario_id: usuarioId, tipo: "nombre_comunidad", aceptado: consent.communityName, version_terminos: consent.termsVersion, fecha_revocacion: consent.communityName ? null : new Date().toISOString() },
+      { usuario_id: usuarioId, tipo: "alertas_sms", aceptado: consent.smsAlerts, version_terminos: consent.termsVersion, fecha_revocacion: consent.smsAlerts ? null : new Date().toISOString() },
+    ];
+    const { error } = await supabase.from("consentimientos").upsert(rows, { onConflict: "usuario_id,tipo,version_terminos" });
+    return !error;
+  }, []);
 
   const profileFromAuthUser = useCallback(
     async (authUser: { id: string; phone?: string; user_metadata?: Record<string, unknown> }) => {
@@ -153,7 +166,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [profileFromAuthUser]);
 
-  const login = useCallback(async (telefono: string): Promise<boolean> => {
+  const login = useCallback(async (telefono: string, consent?: LoginConsent): Promise<boolean> => {
     setAuthError(null);
     const validation = isValidChileanMobile(telefono);
     if (!validation.valid) {
@@ -178,11 +191,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
 
+    if (!consent?.auth || !consent.adult || !consent.termsVersion) {
+      setAuthError("Debes aceptar los términos, la política de privacidad y declarar que eres mayor de 18 años.");
+      return false;
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
       phone: normalized,
       options: {
         shouldCreateUser: true,
-        data: { name: "Usuario Vulcania" },
+        data: {
+          name: "Usuario Vulcania",
+          consent_auth: consent.auth,
+          consent_community_name: consent.communityName,
+          consent_alertas_sms: consent.smsAlerts,
+          mayor_edad: consent.adult,
+          terms_version: consent.termsVersion,
+        },
       },
     });
 
@@ -192,6 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     setPendingPhone(normalized);
+    setPendingConsent(consent);
     return true;
   }, []);
 
@@ -213,20 +239,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
 
+    const consent = pendingConsent;
+    if (!consent) {
+      setAuthError("Falta confirmar el consentimiento antes de entrar.");
+      return false;
+    }
+
+    const consentSaved = await persistConsents(data.user.id, consent);
+    if (!consentSaved) {
+      await supabase.auth.signOut();
+      setAuthError("No pudimos guardar tu consentimiento. No se abrió la sesión.");
+      return false;
+    }
+
     const profile = await profileFromAuthUser(data.user);
     setUsuario(profile);
     setPendingPhone(null);
+    setPendingConsent(null);
     return true;
-  }, [pendingPhone, profileFromAuthUser]);
+  }, [pendingConsent, pendingPhone, persistConsents, profileFromAuthUser]);
 
   const clearPendingOtp = useCallback(() => {
     setPendingPhone(null);
+    setPendingConsent(null);
     setAuthError(null);
   }, []);
 
   const logout = useCallback(async () => {
     setUsuario(null);
     setPendingPhone(null);
+    setPendingConsent(null);
     setAuthError(null);
     if (APP_CONFIG.demoMode) {
       try {

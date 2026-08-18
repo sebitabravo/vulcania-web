@@ -1,11 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import { hasSupabaseConfig } from "@/lib/app-config";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 /** The browser client is intentionally absent in offline demo mode. */
 export const supabase =
-  supabaseUrl && supabaseAnonKey
+  hasSupabaseConfig() && supabaseUrl && supabaseAnonKey
     ? createClient(supabaseUrl, supabaseAnonKey, {
         auth: {
           persistSession: true,
@@ -41,11 +42,14 @@ export interface AlertaVolcan {
   descripcion: string;
   fuente?: string;
   referencia?: string | null;
+  fuente_url?: string | null;
+  fecha_publicacion?: string | null;
+  fecha_verificacion?: string | null;
   es_simulacion?: boolean;
   ultima_actualizacion: string;
   parametros_id?: string;
   volcan_id?: string;
-  informacion_volcan?: Pick<InformacionVolcan, "nombre">;
+  informacion_volcan?: Pick<InformacionVolcan, "nombre" | "altura_msnm" | "latitud" | "longitud" | "fuente" | "fuente_url" | "ultima_verificacion">;
 }
 
 export interface ParametrosVolcan {
@@ -54,6 +58,8 @@ export interface ParametrosVolcan {
   temperatura_crater: string;
   emision_so2: string;
   deformacion: string;
+  fuente?: string;
+  es_simulacion?: boolean;
   fecha_actualizacion: string;
 }
 
@@ -82,6 +88,11 @@ export interface ZonaExclusion {
   nivel_alerta: AlertLevel;
   radio_km: number;
   descripcion: string;
+  fuente?: string;
+  fuente_url?: string | null;
+  documento?: string | null;
+  fecha_fuente?: string | null;
+  trazabilidad?: "oficial" | "por_confirmar" | "comunitaria" | string;
 }
 
 export interface AccionRequerida {
@@ -101,6 +112,14 @@ export interface InformacionVolcan {
   latitud: number;
   longitud: number;
   descripcion?: string;
+  tipo_volcan?: string | null;
+  laguna_lava?: boolean | null;
+  erupciones_registradas?: number | null;
+  ultima_erupcion_vei?: number | null;
+  riesgos_principales?: string | null;
+  fuente?: string;
+  fuente_url?: string | null;
+  ultima_verificacion?: string | null;
   activo: boolean;
 }
 
@@ -114,6 +133,23 @@ export interface PuntoEncuentro {
   seguridad_nivel: number;
   tiempo_aprox_pie: number;
   ocupado: boolean;
+  fuente?: string;
+  fuente_url?: string | null;
+  documento?: string | null;
+  fecha_fuente?: string | null;
+  trazabilidad?: "oficial" | "por_confirmar" | "comunitaria" | string;
+}
+
+export type ConsentType = "autenticacion" | "nombre_comunidad" | "alertas_sms";
+
+export interface Consentimiento {
+  id?: string;
+  usuario_id: string;
+  tipo: ConsentType;
+  aceptado: boolean;
+  version_terminos: string;
+  fecha_decision?: string;
+  fecha_revocacion?: string | null;
 }
 
 export interface AvisoComunidad {

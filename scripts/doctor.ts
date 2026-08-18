@@ -20,6 +20,9 @@ const tables = [
   "avisos_comunidad",
   "mensajes_chat",
   "logs_sistema",
+  "detecciones",
+  "consentimientos",
+  "terminos",
 ];
 const protectedTables = new Set([
   "usuarios",
@@ -27,6 +30,8 @@ const protectedTables = new Set([
   "avisos_comunidad",
   "mensajes_chat",
   "logs_sistema",
+  "detecciones",
+  "consentimientos",
 ]);
 const realtimeTables = [
   "alertas_volcan",

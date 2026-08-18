@@ -140,7 +140,7 @@ describe("interactive-map", () => {
       [number, number],
       { radius: number; color: string; dashArray: string }
     ];
-    expect(center).toEqual([-39.4167, -71.9333]);
+    expect(center).toEqual([-39.42, -71.93]);
     expect(options.radius).toBeGreaterThan(0);
     expect(options.dashArray).toBe("6 6");
     // El banner de la zona (la leyenda repite el mismo texto).

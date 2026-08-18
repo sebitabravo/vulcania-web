@@ -11,6 +11,7 @@ const eslintConfig = [
       "public/**/*",
       "coverage/**/*",
       ".next/**/*",
+      "supabase/functions/**/*",
       "**/*.min.js",
       "**/*.bundle.js",
     ],

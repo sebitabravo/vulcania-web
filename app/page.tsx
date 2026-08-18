@@ -20,7 +20,10 @@ import LoginScreen from "@/components/login-screen";
 import VolcanoStatusHeader from "@/components/volcano-status-header";
 import ThemeToggle from "@/components/theme-toggle";
 import NotificationToggle from "@/components/notification-toggle";
+import VolcanoFacts from "@/components/volcano-facts";
 import { APP_CONFIG } from "@/lib/app-config";
+import LegalLinks from "@/components/legal-links";
+import SmsAlertConsent from "@/components/sms-alert-consent";
 
 const MapComponent = dynamic(() => import("@/components/map-component"), {
   ssr: false,
@@ -123,8 +126,10 @@ export default function VulcaniaApp() {
       </header>
 
       <VolcanoStatusHeader />
+      <VolcanoFacts />
 
       <main className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
+        <div className="mb-5"><SmsAlertConsent /></div>
         <div className="mb-7 flex flex-col justify-between gap-5 md:flex-row md:items-end">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.2em] text-primary">Panel de situación</p>
@@ -176,7 +181,7 @@ export default function VulcaniaApp() {
       <footer className="border-t border-border/70">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-5 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
           <span>{APP_CONFIG.demoMode ? "Vulcania · simulación comunitaria para portfolio" : "Vulcania · monitor comunitario"}</span>
-          <span>Contrasta siempre con SERNAGEOMIN y SENAPRED.</span>
+          <div className="flex flex-wrap items-center gap-4"><span>Contrasta siempre con SERNAGEOMIN y SENAPRED.</span><LegalLinks /></div>
         </div>
       </footer>
 

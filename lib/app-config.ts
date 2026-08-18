@@ -5,6 +5,16 @@ export const toBoolean = (value: string | undefined, fallback = false): boolean 
 
 export type RuntimeEnv = Record<string, string | undefined>;
 
+export function isValidHttpUrl(value: string | undefined): value is string {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 // Mantener estos accesos directos permite que Next.js inlinee las variables
 // NEXT_PUBLIC_* también en los bundles del cliente.
 const runtimeEnv: RuntimeEnv = {
@@ -15,7 +25,7 @@ const runtimeEnv: RuntimeEnv = {
 };
 
 export function hasSupabaseConfig(env: RuntimeEnv = runtimeEnv): boolean {
-  return Boolean(env.NEXT_PUBLIC_SUPABASE_URL && env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return isValidHttpUrl(env.NEXT_PUBLIC_SUPABASE_URL) && Boolean(env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 }
 
 export function resolveDemoMode(env: RuntimeEnv = runtimeEnv): boolean {
@@ -41,4 +51,5 @@ export const APP_CONFIG = {
     process.env.NEXT_PUBLIC_ENABLE_ADMIN_PANEL,
     true
   ),
+  smsAlertsEnabled: toBoolean(process.env.NEXT_PUBLIC_SMS_ALERTS_ENABLED, false),
 };

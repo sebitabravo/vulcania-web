@@ -6,28 +6,25 @@ import { AlertLevelBadge } from "@/components/alert-level-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { APP_CONFIG } from "@/lib/app-config";
 import { ALERT_LEVELS, isAlertLevel, type AlertLevel } from "@/lib/alert-levels";
 import { formatFreshness } from "@/lib/date-utils";
 import { DEMO_PUNTOS_ENCUENTRO, getDemoAlert, setDemoAlertLevel } from "@/lib/demo-data";
+import { isSafeHttpUrl } from "@/lib/official-sources";
 import { supabase, type AvisoComunidad, type PuntoEncuentro } from "@/lib/supabase";
 
 interface AdminPanelProps {
   onClose: () => void;
 }
 
-const PARAMETER_PRESETS: Record<AlertLevel, { sismos_24h: number; temperatura_crater: string; emision_so2: string; deformacion: string }> = {
-  verde: { sismos_24h: 12, temperatura_crater: "650 °C", emision_so2: "400 ton/día", deformacion: "0,8 cm/mes" },
-  amarillo: { sismos_24h: 45, temperatura_crater: "850 °C", emision_so2: "1.200 ton/día", deformacion: "2,3 cm/mes" },
-  naranja: { sismos_24h: 84, temperatura_crater: "1.050 °C", emision_so2: "2.400 ton/día", deformacion: "4,8 cm/mes" },
-  rojo: { sismos_24h: 140, temperatura_crater: "1.250 °C", emision_so2: "4.800 ton/día", deformacion: "7,5 cm/mes" },
-};
-
 export default function AdminPanel({ onClose }: AdminPanelProps) {
   const [currentLevel, setCurrentLevel] = useState<AlertLevel>("verde");
   const [points, setPoints] = useState<PuntoEncuentro[]>([]);
   const [messages, setMessages] = useState<AvisoComunidad[]>([]);
   const [pendingLevel, setPendingLevel] = useState<AlertLevel | null>(null);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [publicationDate, setPublicationDate] = useState("");
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -75,6 +72,14 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
       setPendingLevel(null);
       return;
     }
+    if (!APP_CONFIG.demoMode && (!sourceUrl.trim() || !publicationDate)) {
+      setError("Para cambiar el nivel debes indicar la URL y la fecha del reporte oficial.");
+      return;
+    }
+    if (!APP_CONFIG.demoMode && !isSafeHttpUrl(sourceUrl.trim())) {
+      setError("La fuente debe ser una URL http(s) verificable.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -82,7 +87,11 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
         setDemoAlertLevel(pendingLevel);
       } else {
         if (!supabase) throw new Error("Supabase no configurado");
-        const { error: rpcError } = await supabase.rpc("cambiar_nivel_alerta", { nuevo_nivel: pendingLevel });
+        const { error: rpcError } = await supabase.rpc("cambiar_nivel_alerta", {
+          nuevo_nivel: pendingLevel,
+          fuente_url_input: sourceUrl.trim(),
+          fecha_publicacion_input: publicationDate,
+        });
         if (rpcError) throw rpcError;
       }
       setCurrentLevel(pendingLevel);
@@ -92,6 +101,8 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
     } finally {
       setSaving(false);
       setPendingLevel(null);
+      setSourceUrl("");
+      setPublicationDate("");
     }
   };
 
@@ -195,7 +206,7 @@ export default function AdminPanel({ onClose }: AdminPanelProps) {
         <DialogContent className="bg-card text-foreground sm:max-w-md">
           <DialogHeader className="text-left"><DialogTitle className="font-display">Confirmar cambio operativo</DialogTitle><DialogDescription>{pendingLevel ? `Vas a emitir ${ALERT_LEVELS[pendingLevel].label}. Esta acción cambia el estado visible para la comunidad y queda auditada.` : ""}</DialogDescription></DialogHeader>
           {pendingLevel === "rojo" ? <p className="rounded-lg border border-red-300/30 bg-red-300/10 p-3 text-sm leading-6 text-red-100">Confirma solo si existe un respaldo oficial (RAV/REAV) y una instrucción operativa vigente. La demo nunca representa una alerta real.</p> : null}
-          {pendingLevel ? <div className="rounded-lg border border-border bg-background/50 p-4"><div className="flex items-center gap-3"><AlertLevelBadge level={pendingLevel} /><span className="text-sm text-muted-foreground">Parámetros deterministas: {PARAMETER_PRESETS[pendingLevel].sismos_24h} sismos/24h · {PARAMETER_PRESETS[pendingLevel].temperatura_crater}</span></div></div> : null}
+          {pendingLevel ? <div className="space-y-4 rounded-lg border border-border bg-background/50 p-4"><div className="flex items-center gap-3"><AlertLevelBadge level={pendingLevel} /><span className="text-sm text-muted-foreground">Sin parámetros en tiempo real: solo se registra el nivel confirmado y su fuente.</span></div>{APP_CONFIG.demoMode ? <p className="text-xs text-muted-foreground">La demo no publica una alerta oficial y no solicita una fuente real.</p> : <div className="grid gap-3"><div className="space-y-2"><label htmlFor="alert-source-url" className="text-sm font-medium">URL del reporte oficial</label><Input id="alert-source-url" type="url" placeholder="https://www.sernageomin.cl/..." value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} disabled={saving} required /></div><div className="space-y-2"><label htmlFor="alert-publication-date" className="text-sm font-medium">Fecha de publicación</label><Input id="alert-publication-date" type="date" value={publicationDate} onChange={(event) => setPublicationDate(event.target.value)} disabled={saving} required /></div></div>}</div> : null}
           <DialogFooter><Button type="button" variant="outline" onClick={() => setPendingLevel(null)} disabled={saving}>Cancelar</Button><Button type="button" onClick={() => void updateLevel()} disabled={saving || APP_CONFIG.demoReadOnly}>{saving ? "Guardando…" : "Confirmar cambio"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>

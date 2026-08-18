@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeChainQuery, makeListQuery, makeSingleQuery } from "./supabase-test-helpers";
 import type { PuntoEncuentro } from "@/lib/supabase";
@@ -161,8 +161,14 @@ describe("admin-panel", () => {
     await waitFor(() => expect(screen.getByText("Carla")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: /Naranja/ }));
+    fireEvent.change(screen.getByLabelText("URL del reporte oficial"), { target: { value: "https://www.sernageomin.cl/alertas-volcanicas/" } });
+    fireEvent.change(screen.getByLabelText("Fecha de publicación"), { target: { value: "2026-08-15" } });
     await user.click(screen.getByRole("button", { name: "Confirmar cambio" }));
-    await waitFor(() => expect(supabaseMock.rpc).toHaveBeenCalledWith("cambiar_nivel_alerta", { nuevo_nivel: "naranja" }));
+    await waitFor(() => expect(supabaseMock.rpc).toHaveBeenCalledWith("cambiar_nivel_alerta", {
+      nuevo_nivel: "naranja",
+      fuente_url_input: "https://www.sernageomin.cl/alertas-volcanicas/",
+      fecha_publicacion_input: "2026-08-15",
+    }));
     await waitFor(() => expect(screen.getByText(/Nivel actualizado a Alerta Naranja/)).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: "Ocultar reporte de Carla" }));
@@ -200,6 +206,8 @@ describe("admin-panel", () => {
     await waitFor(() => expect(screen.getByText("Consola de operador")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: /Roja/ }));
+    fireEvent.change(screen.getByLabelText("URL del reporte oficial"), { target: { value: "https://www.sernageomin.cl/alertas-volcanicas/" } });
+    fireEvent.change(screen.getByLabelText("Fecha de publicación"), { target: { value: "2026-08-15" } });
     await user.click(screen.getByRole("button", { name: "Confirmar cambio" }));
     expect(
       await screen.findByText("No se pudo actualizar el nivel. Verifica tu rol de operador y la conexión.")

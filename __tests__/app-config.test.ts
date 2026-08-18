@@ -53,7 +53,7 @@ describe('APP_CONFIG', () => {
   })
 
   it('uses one resolver for explicit demo mode and Supabase fallback', async () => {
-    const { resolveDemoMode } = await import('../lib/app-config')
+    const { hasSupabaseConfig, resolveDemoMode } = await import('../lib/app-config')
 
     expect(resolveDemoMode({
       NEXT_PUBLIC_SUPABASE_URL: 'https://project.supabase.co',
@@ -65,6 +65,7 @@ describe('APP_CONFIG', () => {
       NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key',
     })).toBe(true)
     expect(resolveDemoMode({})).toBe(true)
+    expect(hasSupabaseConfig({ NEXT_PUBLIC_SUPABASE_URL: 'not-a-url', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon-key' })).toBe(false)
   })
 
   it('reads the default runtime configuration from public environment variables', async () => {

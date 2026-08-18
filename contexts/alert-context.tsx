@@ -67,7 +67,7 @@ export function AlertProvider({ children }: { children: React.ReactNode }) {
 
       const { data, error } = await supabase
         .from("alertas_volcan")
-        .select("*, informacion_volcan(nombre)")
+        .select("*, informacion_volcan(nombre, altura_msnm, latitud, longitud, fuente, fuente_url, ultima_verificacion)")
         .order("ultima_actualizacion", { ascending: false })
         .limit(1)
         .maybeSingle();

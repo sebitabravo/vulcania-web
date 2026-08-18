@@ -30,6 +30,9 @@ describe("AuthProvider full mode", () => {
       eq: vi.fn(() => profileQuery),
       maybeSingle: vi.fn().mockResolvedValue({ data: profile, error: null }),
     };
+    const consentQuery = {
+      upsert: vi.fn().mockResolvedValue({ data: null, error: null }),
+    };
     const supabase = {
       auth: {
         getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
@@ -38,7 +41,7 @@ describe("AuthProvider full mode", () => {
         verifyOtp,
         signOut: vi.fn().mockResolvedValue({ error: null }),
       },
-      from: vi.fn(() => profileQuery),
+      from: vi.fn((table: string) => table === "consentimientos" ? consentQuery : profileQuery),
     };
 
     vi.doMock("@/lib/app-config", () => ({
@@ -62,13 +65,24 @@ describe("AuthProvider full mode", () => {
 
     await waitFor(() => expect(result.current.loading).toBe(false));
 
+    const consent = { auth: true as const, communityName: false, smsAlerts: false, adult: true as const, termsVersion: "2026-08-16" };
     await act(async () => {
-      expect(await result.current.login("+56 9 1234 5678")).toBe(true);
+      expect(await result.current.login("+56 9 1234 5678", consent)).toBe(true);
     });
 
     expect(signInWithOtp).toHaveBeenCalledWith({
       phone: "+56912345678",
-      options: { shouldCreateUser: true, data: { name: "Usuario Vulcania" } },
+      options: {
+        shouldCreateUser: true,
+        data: {
+          name: "Usuario Vulcania",
+          consent_auth: true,
+          consent_community_name: false,
+          consent_alertas_sms: false,
+          mayor_edad: true,
+          terms_version: "2026-08-16",
+        },
+      },
     });
     expect(result.current.pendingPhone).toBe("+56912345678");
     expect(window.localStorage.getItem("vulcania_usuario")).toBeNull();
@@ -82,6 +96,7 @@ describe("AuthProvider full mode", () => {
       token: "123456",
       type: "sms",
     });
+    expect(consentQuery.upsert).toHaveBeenCalledOnce();
     expect(result.current.usuario).toMatchObject({ id: profile.id, nombre: profile.nombre });
     expect(result.current.pendingPhone).toBeNull();
     expect(profileQuery.maybeSingle).toHaveBeenCalledOnce();

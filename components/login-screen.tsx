@@ -6,12 +6,15 @@ import { ArrowLeft, ArrowRight, KeyRound, LockKeyhole, Mountain, Phone, ShieldCh
 import { AlertLevelBadge } from "@/components/alert-level-badge";
 import { useAlert } from "@/contexts/alert-context";
 import VolcanoStatusHeader from "@/components/volcano-status-header";
+import VolcanoFacts from "@/components/volcano-facts";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/auth-context";
 import { APP_CONFIG } from "@/lib/app-config";
 import { formatTelefonoInput, isValidChileanMobile } from "@/lib/phone-utils";
+import LegalLinks from "@/components/legal-links";
+import { TERMS_VERSION } from "@/lib/legal";
 
 export default function LoginScreen() {
   const [telefono, setTelefono] = useState("+56 9 ");
@@ -19,6 +22,10 @@ export default function LoginScreen() {
   const [stage, setStage] = useState<"phone" | "code">("phone");
   const [loading, setLoading] = useState(false);
   const [localError, setLocalError] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [declaredAdult, setDeclaredAdult] = useState(false);
+  const [communityNameConsent, setCommunityNameConsent] = useState(false);
+  const [smsAlertsConsent, setSmsAlertsConsent] = useState(false);
   const { login, verifyOtp, pendingPhone, authError, clearPendingOtp } = useAuth();
   const { alerta } = useAlert();
   const isDemo = Boolean(APP_CONFIG.demoMode);
@@ -32,8 +39,21 @@ export default function LoginScreen() {
       return;
     }
 
+    if (!isDemo && (!acceptedTerms || !declaredAdult)) {
+      setLocalError("Acepta los términos, la política de privacidad y declara que eres mayor de 18 años para continuar.");
+      return;
+    }
+
     setLoading(true);
-    const success = await login(telefono);
+    const success = isDemo
+      ? await login(telefono)
+      : await login(telefono, {
+          auth: true,
+          communityName: communityNameConsent,
+          smsAlerts: smsAlertsConsent,
+          adult: true,
+          termsVersion: TERMS_VERSION,
+        });
     if (success && !isDemo) setStage("code");
     setLoading(false);
   };
@@ -74,6 +94,8 @@ export default function LoginScreen() {
       <div className="mb-8">
         <VolcanoStatusHeader />
       </div>
+
+      <VolcanoFacts />
 
       <div className="mx-auto grid max-w-7xl gap-10 px-4 pb-12 sm:px-6 lg:grid-cols-[1fr_440px] lg:items-center lg:px-8">
         <section className="hidden max-w-xl lg:block">
@@ -148,6 +170,28 @@ export default function LoginScreen() {
                   </p>
                 </div>
 
+                {!isDemo ? (
+                  <fieldset className="space-y-3 rounded-lg border border-border/70 bg-background/30 p-4">
+                    <legend className="px-1 text-sm font-medium text-foreground">Consentimiento de acceso</legend>
+                    <label className="flex items-start gap-3 text-xs leading-5 text-muted-foreground">
+                      <input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} className="mt-1 size-4 accent-primary" />
+                      <span>Acepto los <a href="/terminos" className="text-primary underline">Términos de uso</a> y la <a href="/privacidad" className="text-primary underline">Política de privacidad</a>. Este consentimiento queda registrado con versión y fecha.</span>
+                    </label>
+                    <label className="flex items-start gap-3 text-xs leading-5 text-muted-foreground">
+                      <input type="checkbox" checked={declaredAdult} onChange={(event) => setDeclaredAdult(event.target.checked)} className="mt-1 size-4 accent-primary" />
+                      <span>Declaro que tengo 18 años o más y que no registraré datos de menores.</span>
+                    </label>
+                    <label className="flex items-start gap-3 text-xs leading-5 text-muted-foreground">
+                      <input type="checkbox" checked={communityNameConsent} onChange={(event) => setCommunityNameConsent(event.target.checked)} className="mt-1 size-4 accent-primary" />
+                      <span>Acepto mostrar mi nombre en publicaciones comunitarias (opcional y revocable).</span>
+                    </label>
+                    <label className="flex items-start gap-3 text-xs leading-5 text-muted-foreground">
+                      <input type="checkbox" checked={smsAlertsConsent} onChange={(event) => setSmsAlertsConsent(event.target.checked)} className="mt-1 size-4 accent-primary" />
+                      <span>Acepto alertas proactivas por SMS (opcional, separado del acceso y con baja disponible).</span>
+                    </label>
+                  </fieldset>
+                ) : null}
+
                 {errorMessage ? <p role="alert" className="rounded-lg border border-red-400/30 bg-red-400/10 p-3 text-sm leading-6 text-red-200">{errorMessage}</p> : null}
 
                 <Button type="submit" disabled={loading} size="lg" className="h-12 w-full">
@@ -196,6 +240,7 @@ export default function LoginScreen() {
               <LockKeyhole className="mt-0.5 size-3.5 shrink-0 text-primary" aria-hidden="true" />
               <span>La información oficial siempre debe contrastarse con SERNAGEOMIN, SENAPRED y las autoridades locales.</span>
             </div>
+            <div className="mt-4 text-xs text-muted-foreground"><LegalLinks /></div>
           </CardContent>
         </Card>
       </div>

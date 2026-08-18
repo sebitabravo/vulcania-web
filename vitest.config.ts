@@ -18,6 +18,7 @@ export default defineConfig({
         'coverage/',
         '__tests__/',
         'scripts/',
+        'supabase/functions/',
         '**/*.d.ts',
         '**/*.config.*',
       ],

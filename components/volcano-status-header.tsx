@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCircle, Clock3, Database, Radio } from "lucide-react";
+import { AlertCircle, Clock3, Database, ExternalLink, Radio } from "lucide-react";
 import { AlertLevelBadge } from "@/components/alert-level-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { useAlert } from "@/contexts/alert-context";
 import { APP_CONFIG } from "@/lib/app-config";
-import { formatFreshness, formatLocalDateTime, isStale } from "@/lib/date-utils";
+import { formatFreshness, formatLocalDateTime, isStale, isVerificationStale } from "@/lib/date-utils";
 import { getAlertLevelConfig } from "@/lib/alert-levels";
+import { OFFICIAL_DISCLAIMER, OFFICIAL_SOURCES, isSafeHttpUrl } from "@/lib/official-sources";
 
 export default function VolcanoStatusHeader() {
   const { alerta, loading, hasError, realtimeStatus } = useAlert();
@@ -32,9 +33,14 @@ export default function VolcanoStatusHeader() {
   if (!alerta) {
     return (
       <section className="border-y border-border/70 bg-card/70" aria-live="polite">
-        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-5 text-sm text-muted-foreground sm:px-6 lg:px-8">
           <AlertCircle className="size-5 text-yellow-300" aria-hidden="true" />
           <span>No pudimos actualizar el estado. Revisa los canales oficiales antes de actuar.</span>
+          <span className="text-yellow-200">Sin datos oficiales disponibles.</span>
+          <div className="flex flex-wrap gap-3 text-xs">
+            <a className="inline-flex items-center gap-1 text-primary hover:underline" href={OFFICIAL_SOURCES.sernageominAlerts.url} target="_blank" rel="noreferrer">SERNAGEOMIN <ExternalLink className="size-3" aria-hidden="true" /></a>
+            <a className="inline-flex items-center gap-1 text-primary hover:underline" href={OFFICIAL_SOURCES.senapredVillarrica.url} target="_blank" rel="noreferrer">SENAPRED / SAE <ExternalLink className="size-3" aria-hidden="true" /></a>
+          </div>
         </div>
       </section>
     );
@@ -44,6 +50,8 @@ export default function VolcanoStatusHeader() {
   const LevelIcon = config.icon;
   const stale = isStale(alerta.ultima_actualizacion);
   const isSimulation = APP_CONFIG.demoMode || alerta.es_simulacion === true;
+  const verificationDate = alerta.fecha_verificacion || alerta.ultima_actualizacion;
+  const verificationStale = isVerificationStale(verificationDate);
   const volcanoName = alerta.informacion_volcan?.nombre || APP_CONFIG.defaultVolcanoName || "Villarrica";
 
   return (
@@ -86,7 +94,10 @@ export default function VolcanoStatusHeader() {
               Fuente: {alerta.fuente || "Fuente no declarada"}
             </span>
             {alerta.referencia ? <span>Referencia: {alerta.referencia}</span> : null}
+            <span>Verificación: {verificationDate ? formatLocalDateTime(verificationDate) : "no disponible"}</span>
+            {isSafeHttpUrl(alerta.fuente_url) ? <a className="inline-flex items-center gap-1 text-primary hover:underline" href={alerta.fuente_url} target="_blank" rel="noreferrer">Abrir fuente <ExternalLink className="size-3" aria-hidden="true" /></a> : null}
             {stale ? <span className="text-yellow-200">Información posiblemente desactualizada</span> : null}
+            {verificationStale ? <span className="text-yellow-200">Estado no verificado en los últimos 7 días</span> : null}
             {hasError ? <span className="text-yellow-200">Última lectura disponible; no pudimos actualizar ahora.</span> : null}
             {!APP_CONFIG.demoMode && realtimeStatus && realtimeStatus !== "subscribed" ? (
               <span className="text-yellow-200">Canal en tiempo real no confirmado; reintentando cada 30 s.</span>
@@ -103,6 +114,11 @@ export default function VolcanoStatusHeader() {
             </div>
           </div>
         </Card>
+        <div className="col-span-full flex flex-wrap gap-x-4 gap-y-1 border-t border-border/50 pt-3 text-xs text-muted-foreground">
+          <span>{OFFICIAL_DISCLAIMER}</span>
+          <a className="inline-flex items-center gap-1 text-primary hover:underline" href={OFFICIAL_SOURCES.sernageominAlerts.url} target="_blank" rel="noreferrer">SERNAGEOMIN <ExternalLink className="size-3" aria-hidden="true" /></a>
+          <a className="inline-flex items-center gap-1 text-primary hover:underline" href={OFFICIAL_SOURCES.senapredVillarrica.url} target="_blank" rel="noreferrer">SENAPRED / SAE <ExternalLink className="size-3" aria-hidden="true" /></a>
+        </div>
       </div>
     </section>
   );
